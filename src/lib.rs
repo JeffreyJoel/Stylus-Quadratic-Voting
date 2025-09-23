@@ -11,8 +11,6 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-
-/// Import items from the SDK. The prelude contains common traits and macros.
 use stylus_sdk::{
     alloy_primitives::{Address, U256},
     alloy_sol_types::sol,
@@ -21,9 +19,13 @@ use stylus_sdk::{
 
 sol! {
     #[derive(Debug)]
+    error SessionNotFound();
+    #[derive(Debug)]
+    error SessionNotActive();
+    #[derive(Debug)]
     error ProposalNotFound();
     #[derive(Debug)]
-    error ProposalExpired();
+    error VoterNotRegistered();
     #[derive(Debug)]
     error InsufficientCredits();
     #[derive(Debug)]
@@ -31,424 +33,399 @@ sol! {
     #[derive(Debug)]
     error Unauthorized();
     #[derive(Debug)]
-    error ProposalAlreadyExecuted();
-    #[derive(Debug)]
     error ArithmeticOverflow();
 
-    event ProposalCreated(uint256 indexed id, address indexed creator, string title);
-    event CreditsDistributed(address indexed voter, uint256 amount);
-    event VoteCast(address indexed voter, uint256 indexed proposal_id, uint64 votes_for, uint64 votes_against, uint256 credits_spent);
-    event VotingDurationChanged(uint256 old_duration, uint256 new_duration);
+    event SessionCreated(uint256 indexed id, address indexed creator, string name);
+    event VoterRegistered(address indexed voter, string email);
+    event ProposalCreated(uint256 indexed session_id, uint256 indexed proposal_id, address indexed creator, string title);
+    event VoteCast(uint256 indexed session_id, address indexed voter, uint256[] proposal_ids, uint256[] vote_counts, uint256 total_credits_spent);
 }
 
 #[derive(SolidityError, Debug)]
 pub enum QuadraticVotingError {
+    SessionNotFound(SessionNotFound),
+    SessionNotActive(SessionNotActive),
     ProposalNotFound(ProposalNotFound),
-    ProposalExpired(ProposalExpired),
+    VoterNotRegistered(VoterNotRegistered),
     InsufficientCredits(InsufficientCredits),
     InvalidVoteCount(InvalidVoteCount),
     Unauthorized(Unauthorized),
-    ProposalAlreadyExecuted(ProposalAlreadyExecuted),
     ArithmeticOverflow(ArithmeticOverflow),
 }
 
 
+
 sol_storage! {
-    #[entrypoint]
+    pub struct Proposal {
+        string title;
+        string description;
+        uint256 vote_count;
+    }
+
+    pub struct Vote {
+        uint256 proposal_id;
+        uint256 credits;
+        uint256 timestamp;
+    }
+
+    pub struct Voter {
+        string email;
+        bool is_registered;
+    }
+
+    pub struct VotingSession {
+        string name;
+        string description;
+        uint256 start_time;
+        uint256 end_time;
+        uint256 credits_per_voter;
+        bool active;
+        mapping(uint256 => Proposal) proposals;
+        uint256 proposal_count;
+        address creator;
+        mapping(address => mapping(uint256 => uint256)) votes_per_proposal; // voter => proposalId => votes
+        mapping(address => uint256) voter_credits; // Credits per voter in this session
+    }
+
     pub struct QuadraticVoting {
-        // Proposals storage - proposal_id => individual fields
-        mapping(uint256 => uint256) proposal_id;
-        // Skip title and description for now
-        mapping(uint256 => address) proposal_creator;
-        mapping(uint256 => uint256) proposal_created_at;
-        mapping(uint256 => uint256) proposal_voting_ends_at;
-        mapping(uint256 => uint256) proposal_total_votes_for;
-        mapping(uint256 => uint256) proposal_total_votes_against;
-        mapping(uint256 => bool) proposal_executed;
-        // Votes storage - (voter, proposal_id) => individual fields
-        mapping(address => mapping(uint256 => address)) vote_voter;
-        mapping(address => mapping(uint256 => uint256)) vote_proposal_id;
-        mapping(address => mapping(uint256 => uint256)) vote_votes_for;
-        mapping(address => mapping(uint256 => uint256)) vote_votes_against;
-        mapping(address => mapping(uint256 => uint256)) vote_credits_spent;
-        // Voter credits - voter_address => individual fields
-        mapping(address => address) voter_credits_addr;
-        mapping(address => uint256) voter_credits_total;
-        mapping(address => uint256) voter_credits_spent;
-        mapping(address => uint256) voter_credits_remaining;
-        // Contract state
-        uint256 proposal_counter;
+        mapping(uint256 => VotingSession) sessions;
+        mapping(address => Voter) voters;
+        uint256 session_counter;
         address admin;
-        uint256 voting_duration; // in blocks
     }
 }
 
 
-
 #[public]
 impl QuadraticVoting {
-    /// Initialize the contract with admin, default credits, and voting duration
-    pub fn initialize(
-        &mut self,
-        default_credits: U256,
-        voting_duration: U256,
-    ) -> Result<(), QuadraticVotingError> {
+    /// Initialize the contract with admin
+    pub fn initialize(&mut self) -> Result<(), QuadraticVotingError> {
         // Only allow initialization once
         if !self.admin.get().is_zero() {
             return Err(QuadraticVotingError::Unauthorized(Unauthorized {}));
         }
 
         let admin = self.vm().msg_sender();
-
         self.admin.set(admin);
-        self.voting_duration.set(voting_duration);
-        self.proposal_counter.set(U256::ZERO);
-
-        // Initialize admin with credits
-        self.voter_credits_addr.setter(admin).set(admin);
-        self.voter_credits_total.setter(admin).set(default_credits);
-        self.voter_credits_spent.setter(admin).set(U256::ZERO);
-        self.voter_credits_remaining
-            .setter(admin)
-            .set(default_credits);
+        self.session_counter.set(U256::ZERO);
 
         Ok(())
     }
 
-    /// Distribute credits to voters (admin only)
-    pub fn distribute_credits(
-        &mut self,
-        voters: Vec<Address>,
-        amounts: Vec<U256>,
-    ) -> Result<(), QuadraticVotingError> {
+    /// Register a voter with their email
+    pub fn register_voter(&mut self, email: String) -> Result<(), QuadraticVotingError> {
         let caller = self.vm().msg_sender();
-        if caller != self.admin.get() {
+
+        if self.voters.get(caller).is_registered.get() {
             return Err(QuadraticVotingError::Unauthorized(Unauthorized {}));
         }
 
-        if voters.len() != amounts.len() {
-            return Err(QuadraticVotingError::InvalidVoteCount(InvalidVoteCount {}));
-        }
+        self.voters.setter(caller).email.set_str(&email);
+        self.voters.setter(caller).is_registered.set(true);
 
-        for (voter, amount) in voters.iter().zip(amounts.iter()) {
-            let existing_total = self.voter_credits_total.get(*voter);
-            let existing_remaining = self.voter_credits_remaining.get(*voter);
-
-            let new_total = existing_total.saturating_add(*amount);
-            let new_remaining = existing_remaining.saturating_add(*amount);
-
-            self.voter_credits_addr.setter(*voter).set(*voter);
-            self.voter_credits_total.setter(*voter).set(new_total);
-            self.voter_credits_remaining
-                .setter(*voter)
-                .set(new_remaining);
-            // spent_credits remains unchanged
-
-            // Emit CreditsDistributed event
-            log(
-                self.vm(),
-                CreditsDistributed {
-                    voter: *voter,
-                    amount: *amount,
-                },
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Set voting duration for new proposals (admin only)
-    pub fn set_voting_duration(&mut self, duration: U256) -> Result<(), QuadraticVotingError> {
-        let caller = self.vm().msg_sender();
-        if caller != self.admin.get() {
-            return Err(QuadraticVotingError::Unauthorized(Unauthorized {}));
-        }
-
-        let old_duration = self.voting_duration.get();
-        self.voting_duration.set(duration);
-
-        // Emit VotingDurationChanged event
+        // Emit VoterRegistered event
         log(
             self.vm(),
-            VotingDurationChanged {
-                old_duration,
-                new_duration: duration,
+            VoterRegistered {
+                voter: caller,
+                email: email,
             },
         );
 
         Ok(())
     }
 
-    /// Create a new proposal
-    pub fn create_proposal(
+    /// Create a new voting session
+    pub fn create_session(
         &mut self,
-        title: String,
-        _description: String,
+        name: String,
+        description: String,
+        credits_per_voter: U256,
+        duration_seconds: U256,
     ) -> Result<U256, QuadraticVotingError> {
-        // For now, we'll skip storing title and description to avoid string storage complexity
-        // In a real implementation, you'd need to handle string storage properly
         let caller = self.vm().msg_sender();
         let current_block = U256::from(self.vm().block_number());
-        let proposal_id = self.proposal_counter.get() + U256::from(1);
-        let voting_ends_at = current_block + self.voting_duration.get();
+        let session_id = self.session_counter.get() + U256::from(1);
 
-        self.proposal_id.setter(proposal_id).set(proposal_id);
-        // Skip title and description for now
-        self.proposal_creator.setter(proposal_id).set(caller);
-        self.proposal_created_at
-            .setter(proposal_id)
-            .set(current_block);
-        self.proposal_voting_ends_at
-            .setter(proposal_id)
-            .set(voting_ends_at);
-        self.proposal_total_votes_for
-            .setter(proposal_id)
-            .set(U256::ZERO);
-        self.proposal_total_votes_against
-            .setter(proposal_id)
-            .set(U256::ZERO);
-        self.proposal_executed.setter(proposal_id).set(false);
-        self.proposal_counter.set(proposal_id);
+        // Set session details
+        self.sessions.setter(session_id).name.set_str(&name);
+        self.sessions.setter(session_id).description.set_str(&description);
+        self.sessions.setter(session_id).start_time.set(current_block);
+        self.sessions.setter(session_id).end_time.set(current_block + duration_seconds);
+        self.sessions.setter(session_id).credits_per_voter.set(credits_per_voter);
+        self.sessions.setter(session_id).active.set(true);
+        self.sessions.setter(session_id).proposal_count.set(U256::ZERO);
+        self.sessions.setter(session_id).creator.set(caller);
+
+        self.session_counter.set(session_id);
+
+        // Emit SessionCreated event
+        log(
+            self.vm(),
+            SessionCreated {
+                id: session_id,
+                creator: caller,
+                name,
+            },
+        );
+
+        Ok(session_id)
+    }
+
+    /// Get session details
+    pub fn get_session(&self, session_id: U256) -> Result<(String, String, U256, U256, U256, bool, Address, U256), QuadraticVotingError> {
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
+            return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
+        }
+
+        Ok((
+            session.name.get_string(),
+            session.description.get_string(),
+            session.start_time.get(),
+            session.end_time.get(),
+            session.credits_per_voter.get(),
+            session.active.get(),
+            session.creator.get(),
+            session.proposal_count.get(),
+        ))
+    }
+
+    /// Add a proposal to a voting session
+    pub fn add_proposal(
+        &mut self,
+        session_id: U256,
+        title: String,
+        description: String,
+    ) -> Result<U256, QuadraticVotingError> {
+        // Validate session exists and is active
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
+            return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
+        }
+        if !session.active.get() {
+            return Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}));
+        }
+
+        let caller = self.vm().msg_sender();
+        let proposal_id = session.proposal_count.get() + U256::from(1);
+
+        // Store proposal in session
+        self.sessions.setter(session_id).proposals.setter(proposal_id).title.set_str(&title);
+        self.sessions.setter(session_id).proposals.setter(proposal_id).description.set_str(&description);
+        self.sessions.setter(session_id).proposals.setter(proposal_id).vote_count.set(U256::ZERO);
+
+        // Update proposal count
+        self.sessions.setter(session_id).proposal_count.set(proposal_id);
 
         // Emit ProposalCreated event
         log(
             self.vm(),
             ProposalCreated {
-                id: proposal_id,
+                session_id,
+                proposal_id,
                 creator: caller,
-                title: title.clone(),
+                title,
             },
         );
 
         Ok(proposal_id)
     }
 
-    /// Get proposal details
-    pub fn get_proposal(
-        &self,
-        id: U256,
-    ) -> Result<(U256, Address, U256, U256, U256, U256, bool), QuadraticVotingError> {
-        let proposal_id = self.proposal_id.get(id);
-        if proposal_id == U256::ZERO {
+    /// Get proposal details from a session
+    pub fn get_proposal(&self, session_id: U256, proposal_id: U256) -> Result<(String, String, U256), QuadraticVotingError> {
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
+            return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
+        }
+
+        let proposal = session.proposals.get(proposal_id);
+        let proposal_title = proposal.title.get_string();
+        if proposal_title.is_empty() {
             return Err(QuadraticVotingError::ProposalNotFound(ProposalNotFound {}));
         }
 
         Ok((
-            self.proposal_id.get(id),
-            self.proposal_creator.get(id),
-            self.proposal_created_at.get(id),
-            self.proposal_voting_ends_at.get(id),
-            self.proposal_total_votes_for.get(id),
-            self.proposal_total_votes_against.get(id),
-            self.proposal_executed.get(id),
+            proposal_title,
+            proposal.description.get_string(),
+            proposal.vote_count.get(),
         ))
     }
 
-    /// Get all proposals (limited to prevent gas issues)
-    pub fn get_all_proposals(&self) -> Vec<(U256, Address, U256, U256, U256, U256, bool)> {
-        let mut proposals = Vec::new();
-        let counter = self.proposal_counter.get();
-
-        // Limit to first 100 proposals for gas efficiency
-        let limit = if counter > U256::from(100) {
-            U256::from(100)
-        } else {
-            counter
-        };
-
-        for i in 1..=limit.as_limbs()[0] {
-            let id = U256::from(i);
-            let proposal_id = self.proposal_id.get(id);
-            if proposal_id != U256::ZERO {
-                proposals.push((
-                    self.proposal_id.get(id),
-                    self.proposal_creator.get(id),
-                    self.proposal_created_at.get(id),
-                    self.proposal_voting_ends_at.get(id),
-                    self.proposal_total_votes_for.get(id),
-                    self.proposal_total_votes_against.get(id),
-                    self.proposal_executed.get(id),
-                ));
-            }
-        }
-
-        proposals
-    }
-
-    /// Cast a vote on a proposal
+    /// Cast votes on multiple proposals within a session
     pub fn vote(
         &mut self,
-        proposal_id: U256,
-        votes_for: u64,
-        votes_against: u64,
+        session_id: U256,
+        proposal_ids: Vec<U256>,
+        vote_counts: Vec<U256>,
     ) -> Result<(), QuadraticVotingError> {
         let caller = self.vm().msg_sender();
         let current_block = U256::from(self.vm().block_number());
 
-        // Validate proposal exists and is active
-        let proposal_id_check = self.proposal_id.get(proposal_id);
-        if proposal_id_check == U256::ZERO {
-            return Err(QuadraticVotingError::ProposalNotFound(ProposalNotFound {}));
-        }
-        let voting_ends_at = self.proposal_voting_ends_at.get(proposal_id);
-        if current_block >= voting_ends_at {
-            return Err(QuadraticVotingError::ProposalExpired(ProposalExpired {}));
+        // Validate voter is registered
+        if !self.voters.get(caller).is_registered.get() {
+            return Err(QuadraticVotingError::VoterNotRegistered(VoterNotRegistered {}));
         }
 
-        // Calculate quadratic cost
-        let credits_needed = self.calculate_vote_cost(votes_for, votes_against)?;
-
-        // Get existing vote to calculate credit refund
-        let existing_credits_spent = self.vote_credits_spent.get(caller).get(proposal_id);
-        let existing_votes_for = self.vote_votes_for.get(caller).get(proposal_id);
-        let existing_votes_against = self.vote_votes_against.get(caller).get(proposal_id);
-
-        // Check voter has sufficient credits
-        let voter_remaining = self.voter_credits_remaining.get(caller);
-        if voter_remaining < credits_needed {
-            return Err(QuadraticVotingError::InsufficientCredits(
-                InsufficientCredits {},
-            ));
+        // Validate session exists and is active
+        {
+            let session = self.sessions.get(session_id);
+            if session.creator.get() == Address::ZERO {
+                return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
+            }
+            if !session.active.get() {
+                return Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}));
+            }
+            if current_block >= session.end_time.get() {
+                return Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}));
+            }
         }
 
-        // Update voter credits
-        let voter_spent = self.voter_credits_spent.get(caller);
-        let voter_total = self.voter_credits_total.get(caller);
-        let new_spent = voter_spent
-            .saturating_sub(existing_credits_spent)
-            .saturating_add(credits_needed);
-        let new_remaining = voter_total.saturating_sub(new_spent);
+        // Validate input arrays have same length
+        if proposal_ids.len() != vote_counts.len() {
+            return Err(QuadraticVotingError::InvalidVoteCount(InvalidVoteCount {}));
+        }
 
-        self.voter_credits_spent.setter(caller).set(new_spent);
-        self.voter_credits_remaining
-            .setter(caller)
-            .set(new_remaining);
+        // Calculate total quadratic cost
+        let mut total_credits_needed = U256::ZERO;
+        for &vote_count in &vote_counts {
+            let cost = vote_count.pow(U256::from(2));
+            total_credits_needed = total_credits_needed.saturating_add(cost);
+        }
 
-        // Update proposal totals (subtract old vote, add new vote)
-        let current_for = self.proposal_total_votes_for.get(proposal_id);
-        let current_against = self.proposal_total_votes_against.get(proposal_id);
+        // Check voter has sufficient credits for this session
+        // If voter hasn't voted in this session yet, allocate initial credits
+        let session_data = self.sessions.get(session_id);
+        let mut voter_credits = session_data.voter_credits.get(caller);
 
-        let new_for = current_for
-            .saturating_sub(U256::from(existing_votes_for))
-            .saturating_add(U256::from(votes_for));
-        let new_against = current_against
-            .saturating_sub(U256::from(existing_votes_against))
-            .saturating_add(U256::from(votes_against));
+        // If this is the first vote in the session, allocate full credits
+        if voter_credits == U256::ZERO {
+            voter_credits = session_data.credits_per_voter.get();
+        }
 
-        self.proposal_total_votes_for
-            .setter(proposal_id)
-            .set(new_for);
-        self.proposal_total_votes_against
-            .setter(proposal_id)
-            .set(new_against);
+        if voter_credits < total_credits_needed {
+            return Err(QuadraticVotingError::InsufficientCredits(InsufficientCredits {}));
+        }
 
-        // Record the vote
-        self.vote_voter
-            .setter(caller)
-            .setter(proposal_id)
-            .set(caller);
-        self.vote_proposal_id
-            .setter(caller)
-            .setter(proposal_id)
-            .set(proposal_id);
-        self.vote_votes_for
-            .setter(caller)
-            .setter(proposal_id)
-            .set(U256::from(votes_for));
-        self.vote_votes_against
-            .setter(caller)
-            .setter(proposal_id)
-            .set(U256::from(votes_against));
-        self.vote_credits_spent
-            .setter(caller)
-            .setter(proposal_id)
-            .set(credits_needed);
+        // Process votes
+        for (i, &proposal_id) in proposal_ids.iter().enumerate() {
+            let vote_count = vote_counts[i];
+
+            // Validate proposal exists in session
+            let session_data = self.sessions.get(session_id);
+            let proposal = session_data.proposals.get(proposal_id);
+            if proposal.title.get_string().is_empty() {
+                return Err(QuadraticVotingError::ProposalNotFound(ProposalNotFound {}));
+            }
+
+            // Update vote counts
+            let current_votes = session_data.votes_per_proposal.get(caller).get(proposal_id);
+            let new_votes = vote_count;
+
+            // Update proposal vote count (subtract old vote, add new vote)
+            let current_proposal_votes = proposal.vote_count.get();
+            let new_proposal_votes = current_proposal_votes
+                .saturating_sub(current_votes)
+                .saturating_add(new_votes);
+
+            self.sessions.setter(session_id).proposals.setter(proposal_id).vote_count.set(new_proposal_votes);
+
+            // Record the vote
+            self.sessions.setter(session_id).votes_per_proposal.setter(caller).setter(proposal_id).set(new_votes);
+        }
+
+        // Update voter credits for this session (store remaining credits)
+        let new_remaining_credits = voter_credits.saturating_sub(total_credits_needed);
+        self.sessions.setter(session_id).voter_credits.setter(caller).set(new_remaining_credits);
 
         // Emit VoteCast event
         log(
             self.vm(),
             VoteCast {
+                session_id,
                 voter: caller,
-                proposal_id,
-                votes_for,
-                votes_against,
-                credits_spent: credits_needed,
+                proposal_ids: proposal_ids.clone(),
+                vote_counts: vote_counts.clone(),
+                total_credits_spent: total_credits_needed,
             },
         );
 
         Ok(())
     }
 
-    /// Get a voter's vote on a specific proposal
-    pub fn get_vote(&self, voter: Address, proposal_id: U256) -> (Address, U256, U256, U256, U256) {
-        (
-            self.vote_voter.get(voter).get(proposal_id),
-            self.vote_proposal_id.get(voter).get(proposal_id),
-            self.vote_votes_for.get(voter).get(proposal_id),
-            self.vote_votes_against.get(voter).get(proposal_id),
-            self.vote_credits_spent.get(voter).get(proposal_id),
-        )
-    }
-
-    /// Calculate the quadratic cost of votes (pure function)
-    pub fn calculate_vote_cost(
-        &self,
-        votes_for: u64,
-        votes_against: u64,
-    ) -> Result<U256, QuadraticVotingError> {
-        let for_cost = U256::from(votes_for as u128).pow(U256::from(2));
-        let against_cost = U256::from(votes_against as u128).pow(U256::from(2));
-
-        match for_cost.checked_add(against_cost) {
-            Some(total_cost) => Ok(total_cost),
-            None => Err(QuadraticVotingError::ArithmeticOverflow(
-                ArithmeticOverflow {},
-            )),
+    /// Get voter's credits for a specific session
+    pub fn get_voter_session_credits(&self, session_id: U256, voter: Address) -> Result<U256, QuadraticVotingError> {
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
+            return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
         }
+
+        // Return remaining credits (stored directly)
+        Ok(session.voter_credits.get(voter))
     }
 
-    /// Get voter credit information
-    pub fn get_voter_credits(&self, voter: Address) -> (Address, U256, U256, U256) {
-        (
-            self.voter_credits_addr.get(voter),
-            self.voter_credits_total.get(voter),
-            self.voter_credits_spent.get(voter),
-            self.voter_credits_remaining.get(voter),
-        )
-    }
-
-    /// Get remaining credits for a voter
-    pub fn get_remaining_credits(&self, voter: Address) -> U256 {
-        self.voter_credits_remaining.get(voter)
-    }
-
-    /// Get proposal results (votes for, votes against)
-    pub fn get_proposal_results(
-        &self,
-        proposal_id: U256,
-    ) -> Result<(U256, U256), QuadraticVotingError> {
-        let proposal_id_check = self.proposal_id.get(proposal_id);
-        if proposal_id_check == U256::ZERO {
-            return Err(QuadraticVotingError::ProposalNotFound(ProposalNotFound {}));
+    /// Get vote details for a voter in a session
+    pub fn get_vote(&self, session_id: U256, voter: Address, proposal_id: U256) -> Result<U256, QuadraticVotingError> {
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
+            return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
         }
-        Ok((
-            self.proposal_total_votes_for.get(proposal_id),
-            self.proposal_total_votes_against.get(proposal_id),
-        ))
+
+        Ok(session.votes_per_proposal.get(voter).get(proposal_id))
     }
 
-    /// Check if a proposal is still active
-    pub fn is_proposal_active(&self, proposal_id: U256) -> bool {
-        let proposal_id_check = self.proposal_id.get(proposal_id);
-        if proposal_id_check == U256::ZERO {
+    /// Get all proposals in a session
+    pub fn get_session_proposals(&self, session_id: U256) -> Result<Vec<(U256, String, String, U256)>, QuadraticVotingError> {
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
+            return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
+        }
+
+        let mut proposals = Vec::new();
+        let proposal_count = session.proposal_count.get();
+
+        // Limit to prevent gas issues
+        let limit = if proposal_count > U256::from(100) {
+            U256::from(100)
+        } else {
+            proposal_count
+        };
+
+        for i in 1..=limit.as_limbs()[0] {
+            let id = U256::from(i);
+            let proposal = session.proposals.get(id);
+            let proposal_title = proposal.title.get_string();
+            if !proposal_title.is_empty() {
+                proposals.push((
+                    id,
+                    proposal_title,
+                    proposal.description.get_string(),
+                    proposal.vote_count.get(),
+                ));
+            }
+        }
+
+        Ok(proposals)
+    }
+
+    /// Check if a session is still active
+    pub fn is_session_active(&self, session_id: U256) -> bool {
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
             return false;
         }
 
         let current_block = U256::from(self.vm().block_number());
-        let voting_ends_at = self.proposal_voting_ends_at.get(proposal_id);
-        let executed = self.proposal_executed.get(proposal_id);
+        session.active.get() && current_block < session.end_time.get()
+    }
 
-        current_block < voting_ends_at && !executed
+    /// Get voter information
+    pub fn get_voter(&self, voter: Address) -> (String, bool) {
+        let voter_info = self.voters.get(voter);
+        (
+            voter_info.email.get_string(),
+            voter_info.is_registered.get(),
+        )
     }
 }
 
@@ -463,124 +440,163 @@ mod test {
         let mut contract = QuadraticVoting::from(&vm);
 
         let admin = Address::from([1u8; 20]);
-        let default_credits = U256::from(1000);
-        let voting_duration = U256::from(100);
 
         vm.set_sender(admin);
 
         // Initialize contract
-        let result = contract.initialize(default_credits, voting_duration);
+        let result = contract.initialize();
         assert!(result.is_ok());
 
         // Check admin was set
         assert_eq!(contract.admin.get(), admin);
 
-        // Check voting duration was set
-        assert_eq!(contract.voting_duration.get(), voting_duration);
-
-        // Check admin has credits
-        let admin_credits = contract.get_voter_credits(admin);
-        assert_eq!(admin_credits.1, default_credits); // total_credits
-        assert_eq!(admin_credits.3, default_credits); // remaining_credits
+        // Check session counter is initialized
+        assert_eq!(contract.session_counter.get(), U256::ZERO);
     }
 
     #[test]
-    fn test_create_proposal() {
+    fn test_voter_registration() {
         use stylus_sdk::testing::*;
         let vm = TestVM::default();
         let mut contract = QuadraticVoting::from(&vm);
 
-        // Initialize contract first
+        let admin = Address::from([1u8; 20]);
+        let voter = Address::from([2u8; 20]);
+        let email = "test@example.com".to_string();
+
+        vm.set_sender(admin);
+        contract.initialize().unwrap();
+
+        // Register voter
+        vm.set_sender(voter);
+        let result = contract.register_voter(email.clone());
+        assert!(result.is_ok());
+
+        // Check voter was registered
+        let voter_info = contract.get_voter(voter);
+        assert_eq!(voter_info.0, email);
+        assert_eq!(voter_info.1, true);
+    }
+
+    #[test]
+    fn test_create_session() {
+        use stylus_sdk::testing::*;
+        let vm = TestVM::default();
+        let mut contract = QuadraticVoting::from(&vm);
+
         let admin = Address::from([1u8; 20]);
         vm.set_sender(admin);
-        contract
-            .initialize(U256::from(1000), U256::from(100))
+        contract.initialize().unwrap();
+
+        // Create session
+        let name = "Test Session".to_string();
+        let description = "A test voting session".to_string();
+        let credits_per_voter = U256::from(100);
+        let duration = U256::from(3600); // 1 hour
+
+        let session_id = contract
+            .create_session(name.clone(), description.clone(), credits_per_voter, duration)
             .unwrap();
 
-        // Create a proposal
-        let title = "Test Proposal".to_string();
-        let description = "This is a test proposal".to_string();
+        // Check session was created
+        assert_eq!(session_id, U256::from(1));
 
-        let proposal_id = contract
-            .create_proposal(title.clone(), description.clone())
-            .unwrap();
-
-        // Check proposal was created
-        assert_eq!(proposal_id, U256::from(1));
-
-        let proposal = contract.get_proposal(proposal_id).unwrap();
-        assert_eq!(proposal.0, proposal_id); // id
-        assert_eq!(proposal.1, admin); // creator
-        assert_eq!(proposal.4, U256::ZERO); // total_votes_for
-        assert_eq!(proposal.5, U256::ZERO); // total_votes_against
+        let session = contract.get_session(session_id).unwrap();
+        assert_eq!(session.0, name);
+        assert_eq!(session.1, description);
+        assert_eq!(session.4, credits_per_voter);
+        assert_eq!(session.5, true); // active
+        assert_eq!(session.6, admin); // creator
+        assert_eq!(session.7, U256::ZERO); // proposal_count
     }
 
     #[test]
-    fn test_calculate_vote_cost() {
-        use stylus_sdk::testing::*;
-        let vm = TestVM::default();
-        let contract = QuadraticVoting::from(&vm);
-
-        // Test quadratic cost calculation
-        // 1 vote for, 1 vote against: 1² + 1² = 2
-        let cost = contract.calculate_vote_cost(1, 1).unwrap();
-        assert_eq!(cost, U256::from(2));
-
-        // 2 votes for, 2 votes against: 4 + 4 = 8
-        let cost = contract.calculate_vote_cost(2, 2).unwrap();
-        assert_eq!(cost, U256::from(8));
-
-        // 3 votes for, 0 votes against: 9 + 0 = 9
-        let cost = contract.calculate_vote_cost(3, 0).unwrap();
-        assert_eq!(cost, U256::from(9));
-    }
-
-    #[test]
-    fn test_vote_functionality() {
+    fn test_add_proposal_to_session() {
         use stylus_sdk::testing::*;
         let vm = TestVM::default();
         let mut contract = QuadraticVoting::from(&vm);
 
-        // Initialize contract
+        let admin = Address::from([1u8; 20]);
+        vm.set_sender(admin);
+        contract.initialize().unwrap();
+
+        // Create session
+        let session_id = contract
+            .create_session("Test".to_string(), "Desc".to_string(), U256::from(100), U256::from(3600))
+            .unwrap();
+
+        // Add proposal to session
+        let title = "Test Proposal".to_string();
+        let description = "Proposal description".to_string();
+
+        let proposal_id = contract
+            .add_proposal(session_id, title.clone(), description.clone())
+            .unwrap();
+
+        // Check proposal was added
+        assert_eq!(proposal_id, U256::from(1));
+
+        let proposal = contract.get_proposal(session_id, proposal_id).unwrap();
+        assert_eq!(proposal.0, title);
+        assert_eq!(proposal.1, description);
+        assert_eq!(proposal.2, U256::ZERO); // vote_count
+    }
+
+    #[test]
+    fn test_vote_in_session() {
+        use stylus_sdk::testing::*;
+        let vm = TestVM::default();
+        let mut contract = QuadraticVoting::from(&vm);
+
         let admin = Address::from([1u8; 20]);
         let voter = Address::from([2u8; 20]);
 
         vm.set_sender(admin);
-        contract
-            .initialize(U256::from(1000), U256::from(100))
-            .unwrap();
+        contract.initialize().unwrap();
 
-        // Distribute credits to voter
-        contract
-            .distribute_credits(vec![voter], vec![U256::from(100)])
-            .unwrap();
-
-        // Create proposal
-        vm.set_sender(admin);
-        let proposal_id = contract
-            .create_proposal("Test".to_string(), "Desc".to_string())
-            .unwrap();
-
-        // Switch to voter and cast vote
+        // Register voter
         vm.set_sender(voter);
-        let result = contract.vote(proposal_id, 2, 1); // 2² + 1² = 5 credits
+        contract.register_voter("voter@example.com".to_string()).unwrap();
+
+        // Create session
+        vm.set_sender(admin);
+        let session_id = contract
+            .create_session("Test".to_string(), "Desc".to_string(), U256::from(100), U256::from(3600))
+            .unwrap();
+
+        // Add proposals
+        let proposal1_id = contract
+            .add_proposal(session_id, "Proposal 1".to_string(), "Desc 1".to_string())
+            .unwrap();
+        let proposal2_id = contract
+            .add_proposal(session_id, "Proposal 2".to_string(), "Desc 2".to_string())
+            .unwrap();
+
+        // Vote on proposals
+        vm.set_sender(voter);
+        let proposal_ids = vec![proposal1_id, proposal2_id];
+        let vote_counts = vec![U256::from(2), U256::from(1)]; // 4 + 1 = 5 credits total
+
+        let result = contract.vote(session_id, proposal_ids.clone(), vote_counts.clone());
         assert!(result.is_ok());
 
-        // Check vote was recorded
-        let vote = contract.get_vote(voter, proposal_id);
-        assert_eq!(vote.2, U256::from(2)); // votes_for
-        assert_eq!(vote.3, U256::from(1)); // votes_against
-        assert_eq!(vote.4, U256::from(5)); // credits_spent
+        // Check votes were recorded
+        let vote1 = contract.get_vote(session_id, voter, proposal1_id).unwrap();
+        assert_eq!(vote1, U256::from(2));
 
-        // Check proposal totals
-        let (votes_for, votes_against) = contract.get_proposal_results(proposal_id).unwrap();
-        assert_eq!(votes_for, U256::from(2));
-        assert_eq!(votes_against, U256::from(1));
+        let vote2 = contract.get_vote(session_id, voter, proposal2_id).unwrap();
+        assert_eq!(vote2, U256::from(1));
+
+        // Check proposal vote counts
+        let proposal1 = contract.get_proposal(session_id, proposal1_id).unwrap();
+        assert_eq!(proposal1.2, U256::from(2)); // vote_count
+
+        let proposal2 = contract.get_proposal(session_id, proposal2_id).unwrap();
+        assert_eq!(proposal2.2, U256::from(1)); // vote_count
 
         // Check credits were deducted
-        let credits = contract.get_voter_credits(voter);
-        assert_eq!(credits.2, U256::from(5)); // spent_credits
-        assert_eq!(credits.3, U256::from(95)); // remaining_credits
+        let remaining_credits = contract.get_voter_session_credits(session_id, voter).unwrap();
+        assert_eq!(remaining_credits, U256::from(95)); // 100 - 5
     }
 
     #[test]
@@ -589,118 +605,116 @@ mod test {
         let vm = TestVM::default();
         let mut contract = QuadraticVoting::from(&vm);
 
-        // Initialize contract
         let admin = Address::from([1u8; 20]);
         let voter = Address::from([2u8; 20]);
+
         vm.set_sender(admin);
-        contract
-            .initialize(U256::from(1000), U256::from(100))
-            .unwrap();
+        contract.initialize().unwrap();
 
-        // Give voter only 5 credits
-        contract
-            .distribute_credits(vec![voter], vec![U256::from(5)])
-            .unwrap();
-
-        // Create proposal
-        vm.set_sender(admin);
-        let proposal_id = contract
-            .create_proposal("Test".to_string(), "Desc".to_string())
-            .unwrap();
-
-        // Try to vote with 3 votes for (cost = 9 credits) - should fail
+        // Register voter
         vm.set_sender(voter);
-        let result = contract.vote(proposal_id, 3, 0);
+        contract.register_voter("voter@example.com".to_string()).unwrap();
+
+        // Create session with limited credits
+        vm.set_sender(admin);
+        let session_id = contract
+            .create_session("Test".to_string(), "Desc".to_string(), U256::from(5), U256::from(3600))
+            .unwrap();
+
+        // Add proposal
+        let proposal_id = contract
+            .add_proposal(session_id, "Proposal".to_string(), "Desc".to_string())
+            .unwrap();
+
+        // Try to vote with more credits than available (3² = 9 > 5)
+        vm.set_sender(voter);
+        let result = contract.vote(session_id, vec![proposal_id], vec![U256::from(3)]);
         assert!(matches!(
             result,
-            Err(QuadraticVotingError::InsufficientCredits(
-                InsufficientCredits {}
-            ))
+            Err(QuadraticVotingError::InsufficientCredits(InsufficientCredits {}))
         ));
     }
 
     #[test]
-    fn test_vote_update() {
-        use stylus_sdk::testing::*;
-        let vm = TestVM::default();
-        let mut contract = QuadraticVoting::from(&vm);
-
-        // Initialize contract
-        let admin = Address::from([1u8; 20]);
-        let voter = Address::from([2u8; 20]);
-        vm.set_sender(admin);
-        contract
-            .initialize(U256::from(1000), U256::from(100))
-            .unwrap();
-
-        // Give voter credits
-        contract
-            .distribute_credits(vec![voter], vec![U256::from(100)])
-            .unwrap();
-
-        // Create proposal
-        vm.set_sender(admin);
-        let proposal_id = contract
-            .create_proposal("Test".to_string(), "Desc".to_string())
-            .unwrap();
-
-        // First vote: 2 for, 1 against (cost = 5)
-        vm.set_sender(voter);
-        contract.vote(proposal_id, 2, 1).unwrap();
-
-        // Update vote: 1 for, 2 against (cost = 5)
-        contract.vote(proposal_id, 1, 2).unwrap();
-
-        // Check credits (should be same since costs are equal)
-        let credits = contract.get_voter_credits(voter);
-        assert_eq!(credits.2, U256::from(5)); // spent_credits
-        assert_eq!(credits.3, U256::from(95)); // remaining_credits
-
-        // Check proposal totals were updated
-        let (votes_for, votes_against) = contract.get_proposal_results(proposal_id).unwrap();
-        assert_eq!(votes_for, U256::from(1));
-        assert_eq!(votes_against, U256::from(2));
-    }
-
-    #[test]
-    fn test_admin_only_functions() {
+    fn test_session_not_active() {
         use stylus_sdk::testing::*;
         let vm = TestVM::default();
         let mut contract = QuadraticVoting::from(&vm);
 
         let admin = Address::from([1u8; 20]);
-        let non_admin = Address::from([2u8; 20]);
+        let voter = Address::from([2u8; 20]);
+
         vm.set_sender(admin);
-        contract
-            .initialize(U256::from(1000), U256::from(100))
+        contract.initialize().unwrap();
+
+        // Register voter
+        vm.set_sender(voter);
+        contract.register_voter("voter@example.com".to_string()).unwrap();
+
+        // Create session
+        vm.set_sender(admin);
+        let session_id = contract
+            .create_session("Test".to_string(), "Desc".to_string(), U256::from(100), U256::from(1)) // 1 block duration
             .unwrap();
 
-        // Try to distribute credits as non-admin
-        vm.set_sender(non_admin);
-        let result = contract.distribute_credits(vec![non_admin], vec![U256::from(100)]);
-        assert!(matches!(
-            result,
-            Err(QuadraticVotingError::Unauthorized(Unauthorized {}))
-        ));
+        // Add proposal
+        let proposal_id = contract
+            .add_proposal(session_id, "Proposal".to_string(), "Desc".to_string())
+            .unwrap();
 
-        // Try to set voting duration as non-admin
-        let result = contract.set_voting_duration(U256::from(200));
+        // Advance block number to expire session
+        vm.set_block_number(100);
+
+        // Try to vote on expired session
+        vm.set_sender(voter);
+        let result = contract.vote(session_id, vec![proposal_id], vec![U256::from(1)]);
         assert!(matches!(
             result,
-            Err(QuadraticVotingError::Unauthorized(Unauthorized {}))
+            Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}))
         ));
     }
 
     #[test]
-    fn test_proposal_not_found() {
+    fn test_voter_not_registered() {
+        use stylus_sdk::testing::*;
+        let vm = TestVM::default();
+        let mut contract = QuadraticVoting::from(&vm);
+
+        let admin = Address::from([1u8; 20]);
+        let voter = Address::from([2u8; 20]);
+
+        vm.set_sender(admin);
+        contract.initialize().unwrap();
+
+        // Create session without registering voter
+        let session_id = contract
+            .create_session("Test".to_string(), "Desc".to_string(), U256::from(100), U256::from(3600))
+            .unwrap();
+
+        // Add proposal
+        let proposal_id = contract
+            .add_proposal(session_id, "Proposal".to_string(), "Desc".to_string())
+            .unwrap();
+
+        // Try to vote without being registered
+        vm.set_sender(voter);
+        let result = contract.vote(session_id, vec![proposal_id], vec![U256::from(1)]);
+        assert!(matches!(
+            result,
+            Err(QuadraticVotingError::VoterNotRegistered(VoterNotRegistered {}))
+        ));
+    }
+
+    #[test]
+    fn test_session_not_found() {
         use stylus_sdk::testing::*;
         let vm = TestVM::default();
         let contract = QuadraticVoting::from(&vm);
 
-        let result = contract.get_proposal(U256::from(999));
+        let result = contract.get_session(U256::from(999));
         assert!(matches!(
             result,
-            Err(QuadraticVotingError::ProposalNotFound(ProposalNotFound {}))
+            Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}))
         ));
     }
 }
