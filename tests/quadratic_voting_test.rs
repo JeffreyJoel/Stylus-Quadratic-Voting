@@ -383,3 +383,4 @@ fn test_session_results() {
     assert_eq!(results.2, U64::from(2)); // max_votes (highest vote intensity)
     assert_eq!(results.3, U64::from(3)); // total_votes (2 + 1)
 }
+
