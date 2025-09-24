@@ -40,7 +40,15 @@ codegen-units = 1
 strip = true
 lto = true
 panic = "abort"
+opt-level = "z"  # Optimize for size
+overflow-checks = false
+debug = false
+debug-assertions = false
 
-# If you need to reduce the binary size, it is advisable to try other
-# optimization levels, such as "s" and "z"
-opt-level = 3
+[profile.stylus-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"            # More aggressive linking
+codegen-units = 1      # Single codegen unit for better optimization
+strip = true           # Remove all symbols
+panic = "abort"        # Remove panic formatting code
