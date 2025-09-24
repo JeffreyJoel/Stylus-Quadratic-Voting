@@ -1,16 +1,26 @@
 # Quadratic Voting on Arbitrum
 
-A session-based quadratic voting system built with Rust and deployed on Arbitrum using Stylus.
+A simple quadratic voting system built with Rust and deployed on Arbitrum using Stylus.
+
+## The Problem
+
+Web3Bridge has a fixed budget of $50K to organize 7 workshops on various blockchain subject matter. The question of how to allocate these scarce resources arises, and Web3Bridge decides to let its students vote on which workshops should take priority.
+
+A regular voting system (1 student, 1 vote) would not accurately capture the intensity of students' preferences. For example, if a student prefers workshop A above the others, they vote for A. However, this system doesn't capture how they feel about workshops B or C compared to the other options. This is not a very efficient system for budget allocation based on preferences.
+
+Using a **Quadratic Voting system**, a student's preference for each workshop is accurately captured and factored into the overall voting result.
 
 ## What is Quadratic Voting?
 
-Quadratic voting is a voting mechanism where participants can express the intensity of their preferences. Voters get a budget of credits to spend on votes, with costs increasing quadratically:
+Quadratic voting is a collective decision-making procedure that allows participants to express not just their preferences, but also the intensity of those preferences. Unlike traditional voting where each person gets one vote per issue, quadratic voting allows voters to allocate multiple "credits" to issues they care about most.
 
-- **1 vote** costs **1 credit**
-- **2 votes** cost **4 credits**
-- **3 votes** cost **9 credits**
+**Key Principle**: The cost of votes increases quadratically, but the voting power increases linearly.
+- 1 vote costs 1 credit
+- 2 votes cost 4 credits  
+- 3 votes cost 9 credits
+- And so on...
 
-This makes it expensive to dominate outcomes while allowing strong preferences to be expressed.
+This system ensures that while people can express strong preferences on issues they care deeply about, they cannot simply "buy" elections due to the increasing marginal cost.
 
 ## Key Features
 
@@ -150,27 +160,6 @@ cast call --rpc-url 'http://localhost:8547' \
   'getVoterSessionCredits(uint256,address)' 1 0x742d35Cc6634C0532925a3b844Bc454e4438f44e
 ```
 
-## API Reference
-
-### Session Management
-- `initialize()` - Initialize the contract
-- `createSession(string name, string description, uint256 creditsPerVoter, uint256 duration)` - Create new voting session
-- `getSession(uint256 sessionId)` - Get session details
-
-### Voter Management
-- `registerVoter(string email)` - Register as a voter with email
-- `getVoter(address voter)` - Get voter information
-
-### Proposal Management
-- `addProposal(uint256 sessionId, string title, string description)` - Add proposal to session
-- `getProposal(uint256 sessionId, uint256 proposalId)` - Get proposal details
-- `getSessionProposals(uint256 sessionId)` - Get all proposals in session
-
-### Voting
-- `vote(uint256 sessionId, uint256[] proposalIds, uint256[] voteCounts)` - Cast votes on multiple proposals
-- `getVote(uint256 sessionId, address voter, uint256 proposalId)` - Get voter's vote on proposal
-- `getVoterSessionCredits(uint256 sessionId, address voter)` - Get remaining credits in session
-
 ## Architecture
 
 The contract uses a hierarchical structure:
@@ -179,6 +168,3 @@ The contract uses a hierarchical structure:
 - **Votes**: Quadratic-cost votes cast by registered voters
 - **Credits**: Per-session budgets that decrease with quadratic voting costs
 
-## License
-
-MIT License
