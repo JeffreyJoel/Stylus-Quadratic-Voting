@@ -28,7 +28,7 @@ This system ensures that while people can express strong preferences on issues t
 - **Per-session credits**: Each voter gets credits allocated per voting session
 - **Batch voting**: Vote on multiple proposals in a single transaction
 - **Time-limited sessions**: Voting sessions have start and end times
-- **Quadratic cost calculation**: Prevents plutocratic domination
+- **Quadratic cost calculation**: Users enter whole number vote count values, the vlaues are the squared to get the amount of credits to be deducted.
 
 ## Project Structure
 

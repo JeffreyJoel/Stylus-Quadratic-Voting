@@ -146,7 +146,9 @@ impl QuadraticVoting {
         }
 
         if initial_proposals.is_empty() {
-            return Err(QuadraticVotingError::InvalidProposalCount(InvalidProposalCount {}));
+            return Err(QuadraticVotingError::InvalidProposalCount(
+                InvalidProposalCount {},
+            ));
         }
 
         let current_block = U256::from(self.vm().block_number());
@@ -171,10 +173,6 @@ impl QuadraticVoting {
             .credits_per_voter
             .set(credits_per_voter);
         self.sessions.setter(session_id).active.set(true);
-        self.sessions
-            .setter(session_id)
-            .proposal_count
-            .set(U256::ZERO);
         self.sessions.setter(session_id).creator.set(caller);
 
         self.session_counter.set(session_id);
@@ -189,10 +187,8 @@ impl QuadraticVoting {
             },
         );
 
-        // Add initial proposals if provided
-        if !initial_proposals.is_empty() {
-            self.add_proposals_to_session(session_id, initial_proposals)?;
-        }
+        // Add initial proposals (validated to be non-empty above)
+        self.add_proposals_to_session(session_id, initial_proposals)?;
 
         Ok(session_id)
     }
@@ -251,103 +247,24 @@ impl QuadraticVoting {
         vote_counts: Vec<U256>,
     ) -> Result<(), QuadraticVotingError> {
         let caller = self.vm().msg_sender();
-        let current_block = U256::from(self.vm().block_number());
 
-        // Validate voter is registered
-        if !self.voters.get(caller).is_registered.get() {
-            return Err(QuadraticVotingError::VoterNotRegistered(
-                VoterNotRegistered {},
-            ));
-        }
-
-        // Validate session exists and is active
-        {
-            let session = self.sessions.get(session_id);
-            if session.creator.get() == Address::ZERO {
-                return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
-            }
-            if !session.active.get() {
-                return Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}));
-            }
-            if current_block >= session.end_time.get() {
-                return Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}));
-            }
-        }
-
-        // Validate input arrays have same length
-        if proposal_ids.len() != vote_counts.len() {
-            return Err(QuadraticVotingError::InvalidVoteCount(InvalidVoteCount {}));
-        }
+        // Validate all inputs
+        self.validate_vote_inputs(caller, session_id, &proposal_ids, &vote_counts)?;
 
         // Calculate total quadratic cost
-        let mut total_credits_needed = U256::ZERO;
-        for &vote_count in &vote_counts {
-            let cost = vote_count.pow(U256::from(2));
-            total_credits_needed = total_credits_needed.saturating_add(cost);
-        }
+        let total_credits_needed = self.calculate_quadratic_cost(&vote_counts);
 
-        // Check voter has sufficient credits for this session
-        // If voter hasn't voted in this session yet, allocate initial credits
-        let session_data = self.sessions.get(session_id);
-        let mut voter_credits = session_data.voter_credits.get(caller);
+        // Get and validate voter credits
+        let voter_credits =
+            self.get_and_validate_voter_credits(session_id, caller, total_credits_needed)?;
 
-        // If this is the first vote in the session, allocate full credits
-        if voter_credits == U256::ZERO {
-            voter_credits = session_data.credits_per_voter.get();
-        }
+        // Process all votes
+        self.process_votes(session_id, caller, &proposal_ids, &vote_counts)?;
 
-        if voter_credits < total_credits_needed {
-            return Err(QuadraticVotingError::InsufficientCredits(
-                InsufficientCredits {},
-            ));
-        }
+        // Update voter credits
+        self.update_voter_credits(session_id, caller, voter_credits, total_credits_needed);
 
-        // Process votes
-        for (i, &proposal_id) in proposal_ids.iter().enumerate() {
-            let vote_count = vote_counts[i];
-
-            // Validate proposal exists in session
-            let session_data = self.sessions.get(session_id);
-            let proposal = session_data.proposals.get(proposal_id);
-            if proposal.title.get_string().is_empty() {
-                return Err(QuadraticVotingError::ProposalNotFound(ProposalNotFound {}));
-            }
-
-            // Update vote counts
-            let current_votes = session_data.votes_per_proposal.get(caller).get(proposal_id);
-            let new_votes = vote_count;
-
-            // Update proposal vote count (subtract old vote, add new vote)
-            let current_proposal_votes = proposal.vote_count.get();
-            let new_proposal_votes = current_proposal_votes
-                .saturating_sub(current_votes)
-                .saturating_add(new_votes);
-
-            self.sessions
-                .setter(session_id)
-                .proposals
-                .setter(proposal_id)
-                .vote_count
-                .set(new_proposal_votes);
-
-            // Record the vote
-            self.sessions
-                .setter(session_id)
-                .votes_per_proposal
-                .setter(caller)
-                .setter(proposal_id)
-                .set(new_votes);
-        }
-
-        // Update voter credits for this session (store remaining credits)
-        let new_remaining_credits = voter_credits.saturating_sub(total_credits_needed);
-        self.sessions
-            .setter(session_id)
-            .voter_credits
-            .setter(caller)
-            .set(new_remaining_credits);
-
-        // Emit VoteCast event
+        // Emit event
         log(
             self.vm(),
             VoteCast {
@@ -488,7 +405,7 @@ impl QuadraticVoting {
                 .proposal_count
                 .set(proposal_id);
 
-            // Emit ProposalCreated event
+            // log ProposalCreated event
             log(
                 self.vm(),
                 ProposalCreated {
@@ -500,5 +417,139 @@ impl QuadraticVoting {
             );
         }
         Ok(())
+    }
+
+    /// Validate vote inputs including voter registration, session status, and input consistency
+    fn validate_vote_inputs(
+        &self,
+        caller: Address,
+        session_id: U256,
+        proposal_ids: &[U256],
+        vote_counts: &[U256],
+    ) -> Result<(), QuadraticVotingError> {
+        // Validate voter is registered
+        if !self.voters.get(caller).is_registered.get() {
+            return Err(QuadraticVotingError::VoterNotRegistered(
+                VoterNotRegistered {},
+            ));
+        }
+
+        // Validate session exists and is active
+        let session = self.sessions.get(session_id);
+        if session.creator.get() == Address::ZERO {
+            return Err(QuadraticVotingError::SessionNotFound(SessionNotFound {}));
+        }
+        if !session.active.get() {
+            return Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}));
+        }
+
+        let current_block = U256::from(self.vm().block_number());
+        if current_block >= session.end_time.get() {
+            return Err(QuadraticVotingError::SessionNotActive(SessionNotActive {}));
+        }
+
+        // Validate input arrays have same length
+        if proposal_ids.len() != vote_counts.len() {
+            return Err(QuadraticVotingError::InvalidVoteCount(InvalidVoteCount {}));
+        }
+
+        Ok(())
+    }
+
+    /// Calculate the total quadratic cost for all votes
+    fn calculate_quadratic_cost(&self, vote_counts: &[U256]) -> U256 {
+        let mut total_credits_needed = U256::ZERO;
+        for &vote_count in vote_counts {
+            let cost = vote_count.pow(U256::from(2));
+            total_credits_needed = total_credits_needed.saturating_add(cost);
+        }
+        total_credits_needed
+    }
+
+    /// Get voter's current credits for the session and validate they have enough
+    fn get_and_validate_voter_credits(
+        &self,
+        session_id: U256,
+        caller: Address,
+        total_credits_needed: U256,
+    ) -> Result<U256, QuadraticVotingError> {
+        let session_data = self.sessions.get(session_id);
+        let mut voter_credits = session_data.voter_credits.get(caller);
+
+        // If this is the first vote in the session, allocate full credits
+        if voter_credits == U256::ZERO {
+            voter_credits = session_data.credits_per_voter.get();
+        }
+
+        if voter_credits < total_credits_needed {
+            return Err(QuadraticVotingError::InsufficientCredits(
+                InsufficientCredits {},
+            ));
+        }
+
+        Ok(voter_credits)
+    }
+
+    /// Process votes for each proposal, updating vote counts
+    fn process_votes(
+        &mut self,
+        session_id: U256,
+        caller: Address,
+        proposal_ids: &[U256],
+        vote_counts: &[U256],
+    ) -> Result<(), QuadraticVotingError> {
+        for (i, &proposal_id) in proposal_ids.iter().enumerate() {
+            let vote_count = vote_counts[i];
+
+            // Validate proposal exists in session
+            let session_data = self.sessions.get(session_id);
+            let proposal = session_data.proposals.get(proposal_id);
+            if proposal.title.get_string().is_empty() {
+                return Err(QuadraticVotingError::ProposalNotFound(ProposalNotFound {}));
+            }
+
+            // Update vote counts
+            let current_votes = session_data.votes_per_proposal.get(caller).get(proposal_id);
+            let new_votes = vote_count;
+
+            // Update proposal vote count (subtract old vote, add new vote)
+            let current_proposal_votes = proposal.vote_count.get();
+            let new_proposal_votes = current_proposal_votes
+                .saturating_sub(current_votes)
+                .saturating_add(new_votes);
+
+            self.sessions
+                .setter(session_id)
+                .proposals
+                .setter(proposal_id)
+                .vote_count
+                .set(new_proposal_votes);
+
+            // Record the vote
+            self.sessions
+                .setter(session_id)
+                .votes_per_proposal
+                .setter(caller)
+                .setter(proposal_id)
+                .set(new_votes);
+        }
+
+        Ok(())
+    }
+
+    /// Update voter's remaining credits after voting
+    fn update_voter_credits(
+        &mut self,
+        session_id: U256,
+        caller: Address,
+        voter_credits: U256,
+        total_credits_spent: U256,
+    ) {
+        let new_remaining_credits = voter_credits.saturating_sub(total_credits_spent);
+        self.sessions
+            .setter(session_id)
+            .voter_credits
+            .setter(caller)
+            .set(new_remaining_credits);
     }
 }

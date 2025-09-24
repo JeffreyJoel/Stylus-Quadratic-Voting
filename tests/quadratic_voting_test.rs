@@ -165,6 +165,33 @@ fn test_vote_in_session() {
 /// Unhappy paths
 
 #[test]
+fn test_create_session_with_no_proposals() {
+    use stylus_sdk::testing::*;
+    let vm = TestVM::default();
+
+    let admin = Address::from([1u8; 20]);
+    vm.set_sender(admin);
+
+    let mut contract = QuadraticVoting::from(&vm);
+    contract.constructor().unwrap();
+
+    // Try to create session with no proposals
+    let result = contract.create_session(
+        "Test Session".to_string(),
+        "Description".to_string(),
+        U256::from(100),
+        U256::from(3600),
+        vec![], // Empty proposals
+    );
+
+    // Should fail with InvalidProposalCount error
+    assert!(matches!(
+        result,
+        Err(QuadraticVotingError::InvalidProposalCount(_))
+    ));
+}
+
+#[test]
 fn test_insufficient_credits() {
     use stylus_sdk::testing::*;
     let vm = TestVM::default();
