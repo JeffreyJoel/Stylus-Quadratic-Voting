@@ -93,7 +93,6 @@ export function AdminPanel() {
     fetchVoterInfo();
   }, [fetchVoterInfo]);
 
-
   if (!account) {
     return (
       <Card>
