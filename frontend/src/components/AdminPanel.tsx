@@ -9,89 +9,81 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useWallet } from "@/contexts/WalletContext";
 import { QuadraticVotingService } from "@/lib/contract";
-import { Settings, Users, Loader2, AlertCircle } from "lucide-react";
-import React, { useState, useCallback } from "react";
+import { Settings, Loader2, AlertCircle } from "lucide-react";
+import React, { useState } from "react";
 import { toast } from "react-hot-toast";
 
 export function AdminPanel() {
   const { account, signer } = useWallet();
-  const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [voterInfo, setVoterInfo] = useState<any>(null);
 
-  // Test voter registration
-  const handleRegisterVoter = async () => {
+  // Session creation state
+  const [sessionName, setSessionName] = useState("");
+  const [sessionDescription, setSessionDescription] = useState("");
+  const [creditsPerVoter, setCreditsPerVoter] = useState(100);
+  const [durationHours, setDurationHours] = useState(24);
+  const [creatingSession, setCreatingSession] = useState(false);
+
+  // Test session creation (admin function)
+  const handleCreateSession = async () => {
     if (!signer || !account) {
       toast.error("Please connect your wallet");
       return;
     }
 
-    if (!email.trim()) {
-      toast.error("Please enter an email address");
+    if (!sessionName.trim() || !sessionDescription.trim()) {
+      toast.error("Please enter session name and description");
       return;
     }
 
     try {
-      setSubmitting(true);
+      setCreatingSession(true);
       const service = new QuadraticVotingService(signer);
 
-      console.log("Registering voter with email:", email);
-      const tx = await service.registerVoter(email);
+      console.log("🚀 Creating session with params:", {
+        name: sessionName,
+        description: sessionDescription,
+        creditsPerVoter,
+        durationSeconds: durationHours * 3600,
+      });
 
-      toast.success("Registration transaction sent!");
+      // Create session without initial proposals (proposals will be added separately)
+      const tx = await service.createSession(
+        sessionName,
+        sessionDescription,
+        creditsPerVoter, // uint8 (max 255)
+        BigInt(durationHours * 3600), // uint64 - duration in seconds
+        [] // Empty proposals array - proposals will be created separately
+      );
+
+      toast.success("Session creation transaction sent!");
       console.log("Transaction hash:", tx.hash);
 
       const receipt = await tx.wait();
       toast.success(
-        `Voter registered successfully! Block: ${receipt.blockNumber}`
+        `Session created successfully! Block: ${receipt.blockNumber}`
       );
 
-      // Fetch updated voter info
-      await fetchVoterInfo();
-
-      setEmail("");
+      // Reset form
+      setSessionName("");
+      setSessionDescription("");
+      setCreditsPerVoter(100);
+      setDurationHours(24);
     } catch (error: unknown) {
-      console.error("Failed to register voter:", error);
+      console.error("Failed to create session:", error);
       const errorMessage =
-        error instanceof Error ? error.message : "Failed to register voter";
+        error instanceof Error ? error.message : "Failed to create session";
 
       if (errorMessage?.includes("Unauthorized")) {
-        toast.error("Voter already registered");
+        toast.error("Only the contract admin can create sessions");
       } else {
         toast.error(errorMessage);
       }
     } finally {
-      setSubmitting(false);
+      setCreatingSession(false);
     }
   };
-
-  // Note: The actual contract doesn't have a getVoter function
-  // So we'll just show the wallet address and registration status will be shown after registration
-  const fetchVoterInfo = useCallback(async () => {
-    console.log(
-      "ℹ️ Contract doesn't have getVoter function - showing wallet info only"
-    );
-
-    if (!account) {
-      setVoterInfo(null);
-      return;
-    }
-
-    // Set basic info since we can't query voter details from contract
-    setVoterInfo({
-      address: account,
-      email: "Unknown (contract doesn't expose this)",
-      isRegistered: "Unknown (register to test)",
-    });
-  }, [account]);
-
-  // Fetch voter info on component mount and account change
-  React.useEffect(() => {
-    fetchVoterInfo();
-  }, [fetchVoterInfo]);
 
   if (!account) {
     return (
@@ -115,70 +107,92 @@ export function AdminPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Contract Test Panel
+            Admin Panel
           </CardTitle>
           <CardDescription>
-            Test voter registration and contract connection
+            Create voting sessions and manage administrative functions. Use
+            &ldquo;Create Proposal&rdquo; to add proposals to sessions.
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Current Voter Status */}
-          <div className="p-4 bg-muted/50 rounded-lg">
-            <h3 className="font-medium mb-2">Current Voter Status</h3>
-            <div className="space-y-2">
-              <p className="text-sm">
-                <span className="font-medium">Address:</span> {account}
-              </p>
-              {voterInfo ? (
-                <div className="space-y-1">
-                  <p className="text-sm">
-                    <span className="font-medium">Email:</span>{" "}
-                    {voterInfo.email}
-                  </p>
-                  <p className="text-sm">
-                    <span className="font-medium">Registration Status:</span>{" "}
-                    <Badge variant="secondary">{voterInfo.isRegistered}</Badge>
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Loading voter info...
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Voter Registration Test */}
+          {/* Session Creation (Admin Only) */}
           <div className="space-y-4">
-            <h3 className="text-lg font-medium">Test Voter Registration</h3>
+            <h3 className="text-lg font-medium">Create Voting Session</h3>
 
             <div className="space-y-3">
               <div>
-                <label className="text-sm font-medium">Email Address</label>
+                <label className="text-sm font-medium">Session Name</label>
                 <Input
-                  type="email"
-                  placeholder="test@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={submitting}
+                  placeholder="Community Budget Vote"
+                  value={sessionName}
+                  onChange={(e) => setSessionName(e.target.value)}
+                  disabled={creatingSession}
                 />
               </div>
 
+              <div>
+                <label className="text-sm font-medium">Description</label>
+                <Input
+                  placeholder="Vote on how to allocate community funds"
+                  value={sessionDescription}
+                  onChange={(e) => setSessionDescription(e.target.value)}
+                  disabled={creatingSession}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium">
+                    Credits per Voter
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="255"
+                    value={creditsPerVoter}
+                    onChange={(e) =>
+                      setCreditsPerVoter(parseInt(e.target.value) || 100)
+                    }
+                    disabled={creatingSession}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">
+                    Duration (hours)
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={durationHours}
+                    onChange={(e) =>
+                      setDurationHours(parseInt(e.target.value) || 24)
+                    }
+                    disabled={creatingSession}
+                  />
+                </div>
+              </div>
+
               <Button
-                onClick={handleRegisterVoter}
-                disabled={submitting || !email.trim()}
+                onClick={handleCreateSession}
+                disabled={
+                  creatingSession ||
+                  !sessionName.trim() ||
+                  !sessionDescription.trim()
+                }
                 className="w-full"
+                variant="secondary"
               >
-                {submitting ? (
+                {creatingSession ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Registering...
+                    Creating Session...
                   </>
                 ) : (
                   <>
-                    <Users className="h-4 w-4 mr-2" />
-                    Register as Voter
+                    <Settings className="h-4 w-4 mr-2" />
+                    Create Voting Session
                   </>
                 )}
               </Button>

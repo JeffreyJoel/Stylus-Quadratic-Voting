@@ -71,17 +71,28 @@ The application will be available at `http://localhost:3000`
 
 ### For Admins
 
-1. **Access Admin Panel** - Go to the "Admin" tab
-2. **Distribute Credits** - Send voting credits to community members
-3. **Bulk Import** - Paste multiple addresses for credit distribution
-4. **Monitor Usage** - Track credit distribution and usage
+1. **Access Admin Panel** - Go to the "Admin Panel" tab
+2. **Create Voting Sessions** - Set up new voting rounds with:
+   - Session name and description
+   - Credits per voter (how many credits each voter gets)
+   - Session duration in hours
+3. **Manage Sessions** - Control session timing and parameters
+4. **Monitor Results** - Track voting progress across sessions
 
 ### For Proposal Creators
 
-1. **Create Proposals** - Go to the "Create" tab
-2. **Add Details** - Provide title and description
-3. **Submit** - Your proposal goes live immediately
-4. **Track Results** - Monitor voting progress and results
+1. **Create Proposals** - Go to the "Create Proposal" tab (+ icon)
+2. **Add to Sessions** - Specify which session to add the proposal to
+3. **Provide Details** - Add title and description for the proposal
+4. **Submit** - Proposal becomes available for voting in that session
+
+### For Voters
+
+1. **Register to Vote** - Go to the "Governance" tab and register with your email
+2. **Join Sessions** - Participate in active voting sessions
+3. **Automatic Credits** - Get credits automatically when you first vote in a session
+4. **Cast Votes** - Vote on proposals using quadratic pricing
+5. **Track Usage** - Monitor your remaining credits per session
 
 ## Quadratic Voting Explained
 
@@ -96,7 +107,7 @@ This prevents wealthy participants from dominating while allowing strong prefere
 ### Available Scripts
 
 - `npm run dev` - Start development server
-- `npm run build` - Build for production  
+- `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
 
@@ -119,13 +130,14 @@ src/
 The frontend integrates with the Stylus Quadratic Voting contract through:
 
 - **QuadraticVotingService**: Main contract interaction service
-- **ABI**: Contract interface definition  
+- **ABI**: Contract interface definition
 - **Types**: TypeScript interfaces for contract data
 - **Error Handling**: User-friendly error messages
 
 ## Deployment
 
 1. Build the application:
+
 ```bash
 npm run build
 ```
