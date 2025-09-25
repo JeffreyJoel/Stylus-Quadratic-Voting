@@ -1,143 +1,186 @@
-import { ethers } from 'ethers'
-import { QUADRATIC_VOTING_ABI } from './abi'
+import { ethers } from "ethers";
+import { QUADRATIC_VOTING_ABI } from "./abi";
 
-// Contract address - to be updated when deployed
-export const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000'
+// Contract address - deployed on Arbitrum local devnode
+export const CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ||
+  "0x44ddf6171263d86f9cea1f0919f738ac6945b035";
 
 // Arbitrum local devnode RPC
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'http://localhost:8547'
+export const RPC_URL =
+  process.env.NEXT_PUBLIC_RPC_URL || "http://localhost:8547";
+
+// Admin wallet details (for testing purposes)
+export const ADMIN_PRIVATE_KEY =
+  "f25960123e3b45f2eb6b9e4857d4eb699d323528d510932816bd0d0ff0f07168";
 
 export function getProvider() {
-  return new ethers.JsonRpcProvider(RPC_URL)
+  return new ethers.JsonRpcProvider(RPC_URL);
 }
 
-export function getContract(providerOrSigner?: ethers.Provider | ethers.Signer) {
-  const provider = providerOrSigner || getProvider()
-  return new ethers.Contract(CONTRACT_ADDRESS, QUADRATIC_VOTING_ABI, provider)
+export function getContract(
+  providerOrSigner?: ethers.Provider | ethers.Signer
+) {
+  console.log("🔧 getContract called with:", {
+    providerOrSigner: !!providerOrSigner,
+    CONTRACT_ADDRESS,
+    ABI_length: QUADRATIC_VOTING_ABI.length,
+  });
+
+  const provider = providerOrSigner || getProvider();
+  console.log("✅ Using provider:", provider.constructor.name);
+
+  const contract = new ethers.Contract(
+    CONTRACT_ADDRESS,
+    QUADRATIC_VOTING_ABI,
+    provider
+  );
+  console.log("✅ Contract created:", { address: contract.target });
+
+  return contract;
 }
 
 export async function connectWallet() {
-  if (typeof window !== 'undefined' && window.ethereum) {
+  if (typeof window !== "undefined" && window.ethereum) {
     try {
-      await window.ethereum.request({ method: 'eth_requestAccounts' })
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-      return { provider, signer }
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      return { provider, signer };
     } catch (error) {
-      console.error('Failed to connect wallet:', error)
-      throw error
+      console.error("Failed to connect wallet:", error);
+      throw error;
     }
   } else {
-    throw new Error('MetaMask not installed')
+    throw new Error("MetaMask not installed");
+
   }
 }
 
 export async function getCurrentAccount() {
-  if (typeof window !== 'undefined' && window.ethereum) {
+  if (typeof window !== "undefined" && window.ethereum) {
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[]
-      return accounts[0] || null
+      const accounts = (await window.ethereum.request({
+        method: "eth_accounts",
+      })) as string[];
+      return accounts[0] || null;
     } catch (error) {
-      console.error('Failed to get current account:', error)
-      return null
+      console.error("Failed to get current account:", error);
+      return null;
     }
   }
-  return null
+  return null;
 }
 
 // Utility functions for contract interactions
 export class QuadraticVotingService {
-  private contract: ethers.Contract
-  
+  private contract: ethers.Contract;
+
   constructor(providerOrSigner?: ethers.Provider | ethers.Signer) {
-    this.contract = getContract(providerOrSigner)
+    this.contract = getContract(providerOrSigner);
   }
 
-  // Admin functions
-  async initialize(defaultCredits: bigint, votingDuration: bigint) {
-    return await this.contract.initialize(defaultCredits, votingDuration)
+  // Voter functions
+  async registerVoter(email: string) {
+    console.log("🚀 Calling contract.registerVoter with email:", email);
+    return await this.contract.registerVoter(email);
   }
 
-  async distributeCredits(voters: string[], amounts: bigint[]) {
-    return await this.contract.distribute_credits(voters, amounts)
+  // Note: getVoter function doesn't exist in the actual contract
+  // The contract only has registerVoter but no way to query voter info
+
+  // Session functions (admin only)
+  async createSession(
+    name: string,
+    description: string,
+    creditsPerVoter: bigint,
+    durationSeconds: bigint,
+    initialProposals: Array<{ title: string; description: string }>
+  ) {
+    // Convert proposals to tuple format expected by contract
+    const proposalTuples = initialProposals.map((p) => [
+      p.title,
+      p.description,
+    ]);
+    return await this.contract.create_session(
+      name,
+      description,
+      creditsPerVoter,
+      durationSeconds,
+      proposalTuples
+    );
+  }
+
+  async getSession(sessionId: bigint) {
+    const result = await this.contract.get_session(sessionId);
+    return QuadraticVotingService.formatSessionData(result);
+  }
+
+  async isSessionActive(sessionId: bigint) {
+    return await this.contract.is_session_active(sessionId);
   }
 
   // Proposal functions
-  async createProposal(title: string, description: string) {
-    return await this.contract.create_proposal(title, description)
+  async getProposal(sessionId: bigint, proposalId: bigint) {
+    const result = await this.contract.get_proposal(sessionId, proposalId);
+    return QuadraticVotingService.formatProposalData(result);
   }
 
-  async getProposal(id: bigint) {
-    const result = await this.contract.get_proposal(id)
-    return {
+  async getSessionProposals(sessionId: bigint) {
+    const results = await this.contract.get_session_proposals(sessionId);
+    return results.map((result: any) => ({
       id: result[0],
-      creator: result[1],
-      createdAt: result[2],
-      votingEndsAt: result[3],
-      totalVotesFor: result[4],
-      totalVotesAgainst: result[5],
-      executed: result[6]
-    }
-  }
-
-  async getAllProposals() {
-    const results = await this.contract.get_all_proposals()
-    return results.map((result: [bigint, string, bigint, bigint, bigint, bigint, boolean]) => ({
-      id: result[0],
-      creator: result[1],
-      createdAt: result[2],
-      votingEndsAt: result[3],
-      totalVotesFor: result[4],
-      totalVotesAgainst: result[5],
-      executed: result[6]
-    }))
+      title: result[1],
+      description: result[2],
+      voteCount: result[3],
+    }));
   }
 
   // Voting functions
-  async vote(proposalId: bigint, votesFor: number, votesAgainst: number) {
-    return await this.contract.vote(proposalId, votesFor, votesAgainst)
+  async vote(sessionId: bigint, proposalIds: bigint[], voteCounts: bigint[]) {
+    return await this.contract.vote(sessionId, proposalIds, voteCounts);
   }
 
-  async getVote(voter: string, proposalId: bigint) {
-    const result = await this.contract.get_vote(voter, proposalId)
+  async getVote(sessionId: bigint, voter: string, proposalId: bigint) {
+    return await this.contract.get_vote(sessionId, voter, proposalId);
+  }
+
+  async getVoterSessionCredits(sessionId: bigint, voter: string) {
+    return await this.contract.get_voter_session_credits(sessionId, voter);
+  }
+
+  // Utility functions
+  static calculateQuadraticCost(votes: bigint[]): bigint {
+    return votes.reduce((total, voteCount) => {
+      return total + voteCount * voteCount;
+    }, 0n);
+  }
+
+  static formatSessionData(sessionData: any) {
     return {
-      voter: result[0],
-      proposalId: result[1],
-      votesFor: result[2],
-      votesAgainst: result[3],
-      creditsSpent: result[4]
-    }
+      name: sessionData[0],
+      description: sessionData[1],
+      startTime: sessionData[2],
+      endTime: sessionData[3],
+      creditsPerVoter: sessionData[4],
+      active: sessionData[5],
+      creator: sessionData[6],
+      proposalCount: sessionData[7],
+    };
   }
 
-  async calculateVoteCost(votesFor: number, votesAgainst: number) {
-    return await this.contract.calculate_vote_cost(votesFor, votesAgainst)
-  }
-
-  // Credit functions
-  async getVoterCredits(voter: string) {
-    const result = await this.contract.get_voter_credits(voter)
+  static formatProposalData(proposalData: any) {
     return {
-      address: result[0],
-      total: result[1],
-      spent: result[2],
-      remaining: result[3]
-    }
+      title: proposalData[0],
+      description: proposalData[1],
+      voteCount: proposalData[2],
+    };
   }
 
-  async getRemainingCredits(voter: string) {
-    return await this.contract.get_remaining_credits(voter)
-  }
-
-  // Results functions
-  async getProposalResults(proposalId: bigint) {
-    const result = await this.contract.get_proposal_results(proposalId)
+  static formatVoterData(voterData: any) {
     return {
-      votesFor: result[0],
-      votesAgainst: result[1]
-    }
-  }
-
-  async isProposalActive(proposalId: bigint) {
-    return await this.contract.is_proposal_active(proposalId)
+      email: voterData[0],
+      isRegistered: voterData[1],
+    };
   }
 }
