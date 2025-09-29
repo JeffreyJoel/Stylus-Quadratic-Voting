@@ -53,6 +53,7 @@ export async function connectWallet() {
     }
   } else {
     throw new Error("MetaMask not installed");
+
   }
 }
 
