@@ -89,20 +89,29 @@ export class QuadraticVotingService {
   // Note: getVoter function doesn't exist in the actual contract
   // The contract only has registerVoter but no way to query voter info
 
-  // Session functions (admin only)
+  // Session functions (admin only) - matches your actual contract
   async createSession(
     name: string,
     description: string,
-    creditsPerVoter: bigint,
-    durationSeconds: bigint,
-    initialProposals: Array<{ title: string; description: string }>
+    creditsPerVoter: number, // uint8 in your contract
+    durationSeconds: bigint, // uint64 in your contract
+    initialProposals: Array<{ title: string; description: string }> = []
   ) {
-    // Convert proposals to tuple format expected by contract
+    console.log("🚀 Calling contract.createSession with params:", {
+      name,
+      description,
+      creditsPerVoter,
+      durationSeconds: durationSeconds.toString(),
+      initialProposals,
+    });
+
+    // Convert proposals to the format expected by the contract: Vec<(String, String)>
     const proposalTuples = initialProposals.map((p) => [
       p.title,
       p.description,
     ]);
-    return await this.contract.create_session(
+
+    return await this.contract.createSession(
       name,
       description,
       creditsPerVoter,

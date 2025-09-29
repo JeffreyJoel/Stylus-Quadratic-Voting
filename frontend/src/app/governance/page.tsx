@@ -1,6 +1,6 @@
 "use client";
 
-import { AdminPanel } from "@/components/AdminPanel";
+import { VoterPanel } from "@/components/VoterPanel";
 import { ContractStatus } from "@/components/ContractStatus";
 import { useWallet } from "@/contexts/WalletContext";
 import {
@@ -27,12 +27,11 @@ export default function GovernancePage() {
                 <Gavel className="h-6 w-6 text-white" />
               </div>
               <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                Governance & Testing
+                Governance & Voting
               </h1>
             </div>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Test smart contract functionality and participate in quadratic
-              voting governance
+              Register as a voter and participate in quadratic voting governance
             </p>
           </div>
 
@@ -88,8 +87,20 @@ export default function GovernancePage() {
           {/* Contract Status */}
           <ContractStatus contractAddress="0x44ddf6171263d86f9cea1f0919f738ac6945b035" />
 
-          {/* Admin Panel / Testing */}
-          <AdminPanel />
+          {/* Voter Panel */}
+          {isConnected ? (
+            <VoterPanel />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Connect Wallet to Continue</CardTitle>
+                <CardDescription>
+                  Please connect your wallet to register as a voter and
+                  participate in governance
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
 
           {/* Instructions */}
           <Card>

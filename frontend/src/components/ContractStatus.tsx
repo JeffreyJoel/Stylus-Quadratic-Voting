@@ -1,16 +1,30 @@
-'use client'
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, CheckCircle, XCircle } from "lucide-react";
 
 interface ContractStatusProps {
-  contractAddress?: string
+  contractAddress?: string;
 }
 
 export function ContractStatus({ contractAddress }: ContractStatusProps) {
-  const isDeployed = contractAddress && contractAddress !== '0x0000000000000000000000000000000000000000'
-  
+  console.log("🔍 ContractStatus - contractAddress:", contractAddress);
+
+  const isDeployed =
+    contractAddress &&
+    contractAddress !== "0x0000000000000000000000000000000000000000" &&
+    contractAddress.length === 42 &&
+    contractAddress.startsWith("0x");
+
+  console.log("🔍 ContractStatus - isDeployed:", isDeployed);
+
   if (isDeployed) {
     return (
       <Card className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
@@ -35,7 +49,7 @@ export function ContractStatus({ contractAddress }: ContractStatusProps) {
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
@@ -50,9 +64,11 @@ export function ContractStatus({ contractAddress }: ContractStatusProps) {
       </CardHeader>
       <CardContent>
         <div className="text-yellow-700 dark:text-yellow-300">
-          <p>The Stylus Quadratic Voting contract is not currently available.</p>
+          <p>
+            The Stylus Quadratic Voting contract is not currently available.
+          </p>
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
