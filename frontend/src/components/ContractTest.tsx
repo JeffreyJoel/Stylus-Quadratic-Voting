@@ -11,7 +11,8 @@ import { toast } from 'react-hot-toast'
 interface TestResult {
   success: boolean
   error?: string
-  [key: string]: any
+  step?: string
+  [key: string]: unknown
 }
 
 export function ContractTest() {

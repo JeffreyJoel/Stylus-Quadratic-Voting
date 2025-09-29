@@ -2,14 +2,13 @@
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  ArrowRight, 
-  Users, 
-  Target, 
-  Lightbulb, 
-  Shield, 
-  Globe, 
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  ArrowRight,
+  Users,
+  Lightbulb,
+  Shield,
+  Globe,
   Github,
   Heart,
   Award,
@@ -31,7 +30,7 @@ export default function AboutPage() {
           </Badge>
           <h1 className="text-hero mb-6">About QuadraticVote</h1>
           <p className="text-subheading text-muted-foreground">
-            We're building the future of democratic governance through mathematical innovation and blockchain technology
+            We&apos;re building the future of democratic governance through mathematical innovation and blockchain technology
           </p>
         </div>
 
@@ -98,7 +97,7 @@ export default function AboutPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  We push the boundaries of what's possible in governance technology, always seeking better ways 
+                  We push the boundaries of what&apos;s possible in governance technology, always seeking better ways
                   to capture and aggregate human preferences.
                 </p>
               </CardContent>
@@ -110,13 +109,13 @@ export default function AboutPage() {
         <section className="max-w-6xl mx-auto mb-20">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div>
-              <h2 className="text-display mb-8">The Problem We're Solving</h2>
+              <h2 className="text-display mb-8">The Problem We&apos;re Solving</h2>
               <div className="space-y-6">
                 <div>
                   <h3 className="text-heading mb-3">Democratic Deficit</h3>
                   <p className="text-muted-foreground">
-                    Traditional voting systems fail to capture the intensity of preferences, leading to outcomes 
-                    that don't reflect what people actually want or need.
+                    Traditional voting systems fail to capture the intensity of preferences, leading to outcomes
+                    that don&apos;t reflect what people actually want or need.
                   </p>
                 </div>
                 <div>
@@ -237,7 +236,7 @@ export default function AboutPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Layer 2 scaling solution providing fast, cheap transactions while inheriting Ethereum's security.
+                  Layer 2 scaling solution providing fast, cheap transactions while inheriting Ethereum&apos;s security.
                 </p>
               </CardContent>
             </Card>
@@ -296,7 +295,7 @@ export default function AboutPage() {
                 </div>
                 <h2 className="text-title mb-4">Open Source & Auditable</h2>
                 <p className="text-body text-muted-foreground">
-                  We believe that governance tools must be completely transparent and verifiable. That's why our entire 
+                  We believe that governance tools must be completely transparent and verifiable. That&apos;s why our entire
                   codebase is open source and available for audit by anyone.
                 </p>
               </div>

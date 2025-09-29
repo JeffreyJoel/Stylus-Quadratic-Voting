@@ -13,15 +13,27 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-// import { toast } from "sonner"; // Temporarily disabled
+import { toast } from "react-hot-toast";
 import { Users, Loader2, Vote, Calendar, Clock } from "lucide-react";
 
 export function VoterPanel() {
   const { account, signer } = useWallet();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [voterInfo, setVoterInfo] = useState<any>(null);
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [voterInfo, setVoterInfo] = useState<{
+    address: string;
+    isRegistered: string;
+    email: string;
+  } | null>(null);
+  const [sessions, setSessions] = useState<Array<{
+    id: number;
+    name: string;
+    description: string;
+    status: string;
+    endTime: Date;
+    creditsPerVoter: number;
+    proposalCount: number;
+  }>>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
 
   // Register as voter

@@ -119,7 +119,7 @@ export default function GovernancePage() {
                   <div>
                     <p className="font-medium">Connect Your Wallet</p>
                     <p className="text-sm text-muted-foreground">
-                      Make sure you're connected to the Arbitrum local devnode
+                      Make sure you&apos;re connected to the Arbitrum local devnode
                       (localhost:8547)
                     </p>
                   </div>

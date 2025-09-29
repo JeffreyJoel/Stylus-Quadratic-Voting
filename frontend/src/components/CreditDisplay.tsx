@@ -7,7 +7,6 @@ import { QuadraticVotingService } from '@/lib/contract'
 import { Coins, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { toast } from 'react-hot-toast'
 
 interface CreditInfo {
   total: bigint

@@ -44,8 +44,6 @@ export default function CreateProposalPage() {
 
     try {
       setCreating(true);
-      const service = new QuadraticVotingService(signer);
-
       console.log("🚀 Creating proposal with params:", {
         sessionId: parseInt(sessionId),
         title: proposalTitle,
@@ -190,8 +188,8 @@ export default function CreateProposalPage() {
                     Feature Under Development
                   </p>
                   <p className="text-blue-700 dark:text-blue-300">
-                    The smart contract currently creates proposals during session creation. 
-                    A separate "add proposal to session" function needs to be implemented 
+                    The smart contract currently creates proposals during session creation.
+                    A separate &quot;add proposal to session&quot; function needs to be implemented
                     for this feature to work.
                   </p>
                 </div>

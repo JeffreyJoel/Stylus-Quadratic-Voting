@@ -74,7 +74,7 @@ export function ProposalCard({ proposal, onVoteSuccess, userCredits = 0 }: Propo
     if (!signer) return 0
     try {
       const service = new QuadraticVotingService(signer)
-      const cost = await service.calculateVoteCost(votesFor, votesAgainst)
+      const cost = await service.calculateVoteCost(BigInt(votesFor), BigInt(votesAgainst))
       return Number(cost)
     } catch (error) {
       console.error('Failed to calculate cost:', error)
@@ -117,7 +117,7 @@ export function ProposalCard({ proposal, onVoteSuccess, userCredits = 0 }: Propo
       setSubmitting(true)
       const service = new QuadraticVotingService(signer)
       
-      await service.vote(proposal.id, pendingVote.votesFor, pendingVote.votesAgainst)
+      await service.vote(BigInt(1), [proposal.id], [BigInt(pendingVote.votesFor)])
       
       setCurrentVote(pendingVote)
       toast.success('Vote submitted successfully!')

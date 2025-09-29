@@ -8,27 +8,27 @@ import React, {
   ReactNode,
   useCallback,
 } from "react";
-import { ethers } from "ethers";
+import { ethers, TypedDataField } from "ethers";
 
 // Extend the existing Window.ethereum type with additional wallet properties
 interface ExtendedEthereum {
   isMetaMask?: boolean;
   isCoinbaseWallet?: boolean;
   isPhantom?: boolean;
-  request: (args: { method: string; params?: any[] }) => Promise<any>;
-  on: (event: string, callback: (...args: any[]) => void) => void;
-  removeListener: (event: string, callback: (...args: any[]) => void) => void;
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on: (event: string, callback: (...args: unknown[]) => void) => void;
+  removeListener: (event: string, callback: (...args: unknown[]) => void) => void;
   removeAllListeners?: (event?: string) => void;
   selectedAddress?: string | null;
   chainId?: string;
-  providers?: any[];
+  providers?: unknown[];
 }
 
 interface WalletInfo {
   name: string;
   icon: string;
   installed: boolean;
-  provider?: any;
+  provider?: unknown;
 }
 
 interface WalletContextType {
@@ -44,7 +44,7 @@ interface WalletContextType {
   disconnect: () => void;
   switchToArbitrum: () => Promise<void>;
   signMessage: (message: string) => Promise<string>;
-  signTypedData: (domain: any, types: any, value: any) => Promise<string>;
+  signTypedData: (domain: Record<string, unknown>, types: Record<string, TypedDataField[]>, value: Record<string, unknown>) => Promise<string>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -104,15 +104,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       // Multiple provider detection (EIP-6963 support)
       if (ethereum?.providers && Array.isArray(ethereum.providers)) {
-        ethereum.providers.forEach((provider: any) => {
-          if (provider.isMetaMask) {
+        ethereum.providers.forEach((provider: unknown) => {
+          if (typeof provider === 'object' && provider !== null && 'isMetaMask' in provider && provider.isMetaMask) {
             wallets.push({
               name: "MetaMask",
               icon: "🦊",
               installed: true,
               provider,
             });
-          } else if (provider.isCoinbaseWallet) {
+          } else if (typeof provider === 'object' && provider !== null && 'isCoinbaseWallet' in provider && provider.isCoinbaseWallet) {
             wallets.push({
               name: "Coinbase Wallet",
               icon: "🛡️",
@@ -162,7 +162,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             (w) => w.name === requestedWalletName
           );
           if (wallet && wallet.provider) {
-            targetProvider = wallet.provider;
+            targetProvider = wallet.provider as ExtendedEthereum;
             selectedWalletName = wallet.name;
           } else if (requestedWalletName === "WalletConnect") {
             throw new Error(
@@ -240,7 +240,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             `Connected to chain ${network.chainId}, expected ${ARBITRUM_LOCAL_CHAIN_ID}`
           ); // DEBUG: will remove later
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Failed to connect wallet:", error); // DEBUG: will remove later
 
         // Reset state on error
@@ -251,17 +251,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setWalletName(null);
 
         // Enhanced error messages
-        if (error.code === 4001) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 4001) {
           throw new Error("Connection rejected by user");
-        } else if (error.code === -32002) {
+        } else if (typeof error === 'object' && error !== null && 'code' in error && error.code === -32002) {
           throw new Error(
             "Connection request already pending. Check your wallet."
           );
-        } else if (error.message?.includes("No wallet")) {
+        } else if (errorMessage?.includes("No wallet")) {
           throw error;
         } else {
           throw new Error(
-            `Failed to connect: ${error.message || "Unknown error"}`
+            `Failed to connect: ${errorMessage || "Unknown error"}`
           );
         }
       } finally {
@@ -299,11 +300,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       await provider.send("wallet_switchEthereumChain", [
         { chainId: `0x${ARBITRUM_LOCAL_CHAIN_ID.toString(16)}` },
       ]);
-    } catch (switchError: any) {
+    } catch (switchError: unknown) {
       console.log("Switch error:", switchError); // DEBUG: will remove later
 
       // This error code indicates that the chain has not been added to MetaMask.
-      if (switchError.code === 4902) {
+      if (typeof switchError === 'object' && switchError !== null && 'code' in switchError && switchError.code === 4902) {
         try {
           await provider.send("wallet_addEthereumChain", [
             {
@@ -320,10 +321,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         } catch (addError) {
           throw new Error("Failed to add Arbitrum Local network to wallet");
         }
-      } else if (switchError.code === 4001) {
+      } else if (typeof switchError === 'object' && switchError !== null && 'code' in switchError && switchError.code === 4001) {
         throw new Error("Network switch rejected by user");
       } else {
-        throw new Error(`Failed to switch network: ${switchError.message}`);
+        const errorMessage = switchError instanceof Error ? switchError.message : String(switchError);
+        throw new Error(`Failed to switch network: ${errorMessage}`);
       }
     }
   }, [provider]);
@@ -341,13 +343,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const signature = await signer.signMessage(message);
         console.log("Message signed successfully"); // DEBUG: will remove later
         return signature;
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Message signing failed:", error); // DEBUG: will remove later
 
-        if (error.code === 4001) {
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 4001) {
           throw new Error("Message signing rejected by user");
         } else {
-          throw new Error(`Failed to sign message: ${error.message}`);
+          throw new Error(`Failed to sign message: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     },
@@ -356,7 +358,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   // EIP-712 Typed Data Signing for structured data
   const signTypedData = useCallback(
-    async (domain: any, types: any, value: any): Promise<string> => {
+    async (domain: Record<string, unknown>, types: Record<string, TypedDataField[]>, value: Record<string, unknown>): Promise<string> => {
       if (!signer) {
         throw new Error("No wallet connected");
       }
@@ -368,13 +370,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const signature = await signer.signTypedData(domain, types, value);
         console.log("Typed data signed successfully"); // DEBUG: will remove later
         return signature;
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Typed data signing failed:", error); // DEBUG: will remove later
 
-        if (error.code === 4001) {
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 4001) {
           throw new Error("Signature rejected by user");
         } else {
-          throw new Error(`Failed to sign typed data: ${error.message}`);
+          throw new Error(`Failed to sign typed data: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     },

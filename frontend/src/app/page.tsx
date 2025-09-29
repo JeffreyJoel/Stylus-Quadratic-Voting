@@ -7,9 +7,7 @@ import {
   ArrowRight,
   BarChart3,
   Globe,
-  Users,
   Shield,
-  TrendingUp,
   CheckCircle2,
   Github,
   ExternalLink,
@@ -228,7 +226,7 @@ export default function Home() {
               </div>
               <h3 className="font-semibold mb-2">Ethereum Security</h3>
               <p className="text-sm text-muted-foreground">
-                Inherits Ethereum's battle-tested security
+                Inherits Ethereum&apos;s battle-tested security
               </p>
             </div>
 

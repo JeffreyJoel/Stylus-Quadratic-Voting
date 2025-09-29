@@ -3,17 +3,15 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  ArrowRight, 
-  Calculator, 
-  Users, 
-  TrendingUp, 
-  Shield, 
+import {
+  ArrowRight,
+  Calculator,
+  Users,
+  Shield,
   BarChart3,
   CheckCircle2,
   AlertTriangle,
   DollarSign,
-  Vote,
   Globe
 } from 'lucide-react'
 import Link from 'next/link'
@@ -319,7 +317,7 @@ export default function HowItWorksPage() {
                 <ul className="space-y-2 text-muted-foreground">
                   <li>• High-performance smart contracts in Rust</li>
                   <li>• Lower gas fees than Ethereum mainnet</li>
-                  <li>• Inherits Ethereum's security guarantees</li>
+                  <li>• Inherits Ethereum&apos;s security guarantees</li>
                   <li>• Fast transaction finalization</li>
                 </ul>
               </CardContent>

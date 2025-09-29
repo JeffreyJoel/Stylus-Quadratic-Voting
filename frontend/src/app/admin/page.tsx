@@ -19,10 +19,6 @@ export default function AdminPage() {
   const { isConnected, account } = useWallet();
 
   // Check if connected wallet is the admin wallet
-  // Admin private key: f25960123e3b45f2eb6b9e4857d4eb699d323528d510932816bd0d0ff0f07168
-  // Derived admin address (you'll need to check what address this private key corresponds to)
-  const ADMIN_PRIVATE_KEY =
-    "f25960123e3b45f2eb6b9e4857d4eb699d323528d510932816bd0d0ff0f07168";
   // For now, allow any connected wallet to test admin functions
   // TODO: Replace with actual admin address derived from the private key
   const isAdmin = !!account; // Temporarily allow any connected wallet

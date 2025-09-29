@@ -32,15 +32,16 @@ export function WalletConnect() {
     try {
       await connect(walletName)
       toast.success(`${walletName || 'Wallet'} connected successfully!`)
-    } catch (error: any) {
-      if (error.message?.includes('No wallet detected') || error.message?.includes('No compatible wallet')) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage?.includes('No wallet detected') || errorMessage?.includes('No compatible wallet')) {
         toast.error('Please install a Web3 wallet (MetaMask, Coinbase, etc.)')
-      } else if (error.message?.includes('rejected by user') || error.message?.includes('cancelled')) {
+      } else if (errorMessage?.includes('rejected by user') || errorMessage?.includes('cancelled')) {
         toast.error('Connection cancelled by user')
-      } else if (error.message?.includes('already pending')) {
+      } else if (errorMessage?.includes('already pending')) {
         toast.error('Check your wallet - connection request is pending')
       } else {
-        toast.error(error.message || 'Failed to connect wallet. Please try again.')
+        toast.error(errorMessage || 'Failed to connect wallet. Please try again.')
       }
     }
   }

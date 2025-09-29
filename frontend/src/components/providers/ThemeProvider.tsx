@@ -6,9 +6,9 @@ import { ReactNode } from 'react'
 export function ThemeProvider({ 
   children, 
   ...props 
-}: { 
+}: {
   children: ReactNode
-  [key: string]: any 
+  [key: string]: unknown
 }) {
   return <NextThemesProvider {...props}>{children}</NextThemesProvider>
 }

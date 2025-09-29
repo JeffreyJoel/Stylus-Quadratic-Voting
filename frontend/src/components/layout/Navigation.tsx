@@ -13,8 +13,6 @@ import {
   Moon,
   Sun,
   BookOpen,
-  Users,
-  BarChart3,
   Home,
   Info,
   Gavel,
