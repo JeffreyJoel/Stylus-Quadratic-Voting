@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { useWallet } from "@/contexts/WalletContext";
-import { QuadraticVotingService } from "@/lib/contract";
+import { useRegisterVoter, useWaitForTransaction } from "@/lib/hooks/useContract";
+import { useAccount } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,9 +17,8 @@ import { toast } from "react-hot-toast";
 import { Users, Loader2, Vote, Calendar, Clock } from "lucide-react";
 
 export function VoterPanel() {
-  const { account, signer } = useWallet();
+  const { address } = useAccount();
   const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [voterInfo, setVoterInfo] = useState<{
     address: string;
     isRegistered: string;
@@ -37,8 +36,11 @@ export function VoterPanel() {
   const [loadingSessions, setLoadingSessions] = useState(false);
 
   // Register as voter
+  const { registerVoter, hash, error, isPending } = useRegisterVoter();
+  const { isLoading: isWaitingForTx } = useWaitForTransaction(hash);
+
   const handleRegisterVoter = async () => {
-    if (!signer || !account) {
+    if (!address) {
       console.error("Please connect your wallet");
       alert("Please connect your wallet");
       return;
@@ -50,19 +52,10 @@ export function VoterPanel() {
     }
 
     try {
-      setSubmitting(true);
-      const service = new QuadraticVotingService(signer);
-
       console.log("Registering voter with email:", email);
-      const tx = await service.registerVoter(email);
+      await registerVoter(email);
 
       toast.success("Registration transaction sent!");
-      console.log("Transaction hash:", tx.hash);
-
-      const receipt = await tx.wait();
-      toast.success(
-        `Voter registration successful! Block: ${receipt.blockNumber}`
-      );
 
       // Refresh voter info after successful registration
       await fetchVoterInfo();
@@ -72,28 +65,26 @@ export function VoterPanel() {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to register voter";
       toast.error(errorMessage);
-    } finally {
-      setSubmitting(false);
     }
   };
 
   // Fetch voter info (placeholder since contract doesn't have getVoter)
   const fetchVoterInfo = useCallback(async () => {
     console.log(
-      "ℹ️ Contract doesn't have getVoter function - showing wallet info only"
+      "ℹContract doesn't have getVoter function - showing wallet info only"
     );
-    if (account) {
+    if (address) {
       setVoterInfo({
-        address: account,
+        address: address,
         isRegistered: "Check after registration",
         email: "Not queryable from contract",
       });
     }
-  }, [account]);
+  }, [address]);
 
   // Load voting sessions (placeholder for now)
   const loadVotingSessions = useCallback(async () => {
-    if (!account) return;
+    if (!address) return;
 
     try {
       setLoadingSessions(true);
@@ -128,19 +119,19 @@ export function VoterPanel() {
     } finally {
       setLoadingSessions(false);
     }
-  }, [account]);
+  }, [address]);
 
   useEffect(() => {
-    if (account) {
+    if (address) {
       fetchVoterInfo();
       loadVotingSessions();
     } else {
       setVoterInfo(null);
       setSessions([]);
     }
-  }, [account, fetchVoterInfo, loadVotingSessions]);
+  }, [address, fetchVoterInfo, loadVotingSessions]);
 
-  if (!account) {
+  if (!address) {
     return (
       <Card>
         <CardHeader>
@@ -176,7 +167,7 @@ export function VoterPanel() {
             <h3 className="font-medium mb-2">Current Status</h3>
             <div className="space-y-2">
               <p className="text-sm">
-                <span className="font-medium">Address:</span> {account}
+                <span className="font-medium">Address:</span> {address}
               </p>
               {voterInfo && (
                 <div className="space-y-1">
@@ -203,19 +194,19 @@ export function VoterPanel() {
                 placeholder="your.email@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={submitting}
+                disabled={isPending || isWaitingForTx}
               />
             </div>
 
             <Button
               onClick={handleRegisterVoter}
-              disabled={submitting || !email.trim()}
+              disabled={isPending || isWaitingForTx || !email.trim()}
               className="w-full"
             >
-              {submitting ? (
+              {(isPending || isWaitingForTx) ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Registering...
+                  {isWaitingForTx ? "Confirming..." : "Registering..."}
                 </>
               ) : (
                 <>

@@ -1,96 +1,17 @@
-// ABI based on your EXACT generated smart contract interface
-export const QUADRATIC_VOTING_ABI = [
-  // Register voter (from your generated ABI)
-  {
-    type: "function",
-    name: "registerVoter",
-    inputs: [{ name: "email", type: "string" }],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
+import { parseAbi } from "viem";
 
-  // Create session (from your generated ABI)
-  {
-    type: "function",
-    name: "createSession",
-    inputs: [
-      { name: "name", type: "string" },
-      { name: "description", type: "string" },
-      { name: "credits_per_voter", type: "uint8" },
-      { name: "duration_seconds", type: "uint64" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-
-  // Get session results (from your generated ABI)
-  {
-    type: "function",
-    name: "getSessionResults",
-    inputs: [{ name: "session_id", type: "uint64" }],
-    outputs: [
-      { name: "", type: "uint8" },
-      { name: "", type: "uint8" },
-      { name: "", type: "uint64" },
-      { name: "", type: "uint64" },
-    ],
-    stateMutability: "view",
-  },
-
-  // Get session proposals (from your generated ABI)
-  {
-    type: "function",
-    name: "getSessionProposals",
-    inputs: [{ name: "session_id", type: "uint64" }],
-    outputs: [
-      {
-        name: "",
-        type: "tuple[]",
-        components: [
-          { name: "", type: "uint8" },
-          { name: "", type: "string" },
-          { name: "", type: "string" },
-          { name: "", type: "uint64" },
-        ],
-      },
-    ],
-    stateMutability: "view",
-  },
-
-  // Error types from your generated ABI
-  {
-    type: "error",
-    name: "InvalidSession",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "ProposalNotFound",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "VoterNotRegistered",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "InsufficientCredits",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "InvalidVoteCount",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "Unauthorized",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "InvalidProposalCount",
-    inputs: [],
-  },
-];
+export const QUADRATIC_VOTING_ABI = parseAbi([
+  "function registerVoter(string email) external",
+  "function createSession(string name, string description, uint8 credits_per_voter, uint64 duration_seconds, (string,string)[] initial_proposals) external returns (uint64)",
+  "function getSession(uint64 session_id) external view returns (string, string, uint256, uint256, uint8, bool, address, uint8)",
+  "function vote(uint64 session_id, uint8[] proposal_ids, uint64[] vote_counts) external",
+  "function getSessionResults(uint64 session_id) external view returns (uint8, uint8, uint64, uint64)",
+  "function getSessionProposals(uint64 session_id) external view returns ((uint8,string,string,uint64)[])",
+  "error InvalidSession()",
+  "error ProposalNotFound()",
+  "error VoterNotRegistered()",
+  "error InsufficientCredits()",
+  "error InvalidVoteCount()",
+  "error Unauthorized()",
+  "error InvalidProposalCount()"
+]);

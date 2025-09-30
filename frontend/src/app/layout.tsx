@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { WalletProvider } from '@/contexts/WalletContext'
-import { ThemeProvider } from '@/components/providers/ThemeProvider'
+import { AppProviders } from '@/components/providers/AppProviders'
 import { Navigation } from '@/components/layout/Navigation'
 import { Toaster } from 'react-hot-toast'
 
@@ -35,30 +34,23 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <WalletProvider>
-            <div className="relative flex min-h-screen flex-col">
-              <Navigation />
-              <main className="flex-1">{children}</main>
-            </div>
-            <Toaster 
-              position="top-right"
-              toastOptions={{
-                duration: 4000,
-                style: {
-                  background: 'hsl(var(--card))',
-                  color: 'hsl(var(--card-foreground))',
-                  border: '1px solid hsl(var(--border))',
-                },
-              }}
-            />
-          </WalletProvider>
-        </ThemeProvider>
+        <AppProviders>
+          <div className="relative flex min-h-screen flex-col">
+            <Navigation />
+            <main className="flex-1">{children}</main>
+          </div>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              style: {
+                background: 'hsl(var(--card))',
+                color: 'hsl(var(--card-foreground))',
+                border: '1px solid hsl(var(--border))',
+              },
+            }}
+          />
+        </AppProviders>
       </body>
     </html>
   );

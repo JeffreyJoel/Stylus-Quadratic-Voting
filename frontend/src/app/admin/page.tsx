@@ -1,10 +1,10 @@
 "use client";
 
-import { useWallet } from "@/contexts/WalletContext";
+import { useAccount } from "wagmi";
 import { AdminPanel } from "@/components/AdminPanel";
 import { ContractStatus } from "@/components/ContractStatus";
 import { WalletConnect } from "@/components/WalletConnect";
-import { CONTRACT_ADDRESS } from "@/lib/contract";
+import { CONTRACT_ADDRESS } from "@/lib/wagmi";
 import { Settings, Shield, AlertTriangle } from "lucide-react";
 import {
   Card,
@@ -16,12 +16,12 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function AdminPage() {
-  const { isConnected, account } = useWallet();
+  const { isConnected, address } = useAccount();
 
   // Check if connected wallet is the admin wallet
   // For now, allow any connected wallet to test admin functions
   // TODO: Replace with actual admin address derived from the private key
-  const isAdmin = !!account; // Temporarily allow any connected wallet
+  const isAdmin = !!address; // Temporarily allow any connected wallet
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
@@ -67,7 +67,7 @@ export default function AdminPage() {
                 contract administrators only.
                 <br />
                 <span className="text-sm text-red-600 dark:text-red-400">
-                  Connected: {account} | Admin verification needed
+                  Connected: {address} | Admin verification needed
                 </span>
               </AlertDescription>
             </Alert>

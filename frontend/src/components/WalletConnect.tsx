@@ -2,11 +2,11 @@
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { useWallet } from '@/contexts/WalletContext'
+import { usePrivy, useWallets } from '@privy-io/react-auth'
 import { Wallet, LogOut, Loader2, ChevronDown, Copy, Check } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -15,28 +15,33 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 export function WalletConnect() {
-  const { 
-    account, 
-    isConnected, 
-    isConnecting, 
-    chainId,
-    walletName,
-    availableWallets,
-    connect, 
-    disconnect
-  } = useWallet()
-  const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const { ready, authenticated, user, login, logout } = usePrivy()
   const [copied, setCopied] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
-  const handleConnect = async (walletName?: string) => {
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const address = user?.wallet?.address
+
+  // Don't render anything during SSR
+  if (!mounted) {
+    return (
+      <Button disabled className="bg-muted">
+        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        Loading...
+      </Button>
+    )
+  }
+
+  const handleConnect = async () => {
     try {
-      await connect(walletName)
-      toast.success(`${walletName || 'Wallet'} connected successfully!`)
+      await login()
+      toast.success('Wallet connected successfully!')
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage?.includes('No wallet detected') || errorMessage?.includes('No compatible wallet')) {
-        toast.error('Please install a Web3 wallet (MetaMask, Coinbase, etc.)')
-      } else if (errorMessage?.includes('rejected by user') || errorMessage?.includes('cancelled')) {
+      if (errorMessage?.includes('rejected by user') || errorMessage?.includes('cancelled')) {
         toast.error('Connection cancelled by user')
       } else if (errorMessage?.includes('already pending')) {
         toast.error('Check your wallet - connection request is pending')
@@ -46,22 +51,19 @@ export function WalletConnect() {
     }
   }
 
-  const handleDisconnect = () => {
-    setIsDisconnecting(true)
+  const handleDisconnect = async () => {
     try {
-      disconnect()
+      await logout()
       toast.success('Wallet disconnected')
     } catch {
       toast.error('Failed to disconnect wallet')
-    } finally {
-      setIsDisconnecting(false)
     }
   }
 
   const copyAddress = async () => {
-    if (account) {
+    if (address) {
       try {
-        await navigator.clipboard.writeText(account)
+        await navigator.clipboard.writeText(address)
         setCopied(true)
         toast.success('Address copied to clipboard')
         setTimeout(() => setCopied(false), 2000)
@@ -71,18 +73,28 @@ export function WalletConnect() {
     }
   }
 
+  // Show loading state while Privy is initializing
+  if (!ready) {
+    return (
+      <Button disabled className="bg-muted">
+        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        Loading...
+      </Button>
+    )
+  }
+
   // Connected State - Clean header-style display
-  if (isConnected && account) {
+  if (authenticated && address) {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="flex items-center gap-2 bg-success/10 border-success/20 hover:bg-success/20"
           >
             <div className="w-2 h-2 bg-success rounded-full" />
             <span className="hidden sm:inline font-mono text-sm">
-              {account.slice(0, 6)}...{account.slice(-4)}
+              {address.slice(0, 6)}...{address.slice(-4)}
             </span>
             <ChevronDown className="h-4 w-4" />
           </Button>
@@ -92,14 +104,14 @@ export function WalletConnect() {
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 bg-success rounded-full" />
               <Badge variant="secondary" className="text-xs">
-                {walletName || 'Connected'}
+                {user?.wallet?.walletClientType || 'Connected'}
               </Badge>
             </div>
             <div className="font-mono text-sm text-muted-foreground break-all">
-              {account}
+              {address}
             </div>
           </div>
-          
+
           <DropdownMenuItem onClick={copyAddress} className="cursor-pointer">
             {copied ? (
               <Check className="w-4 h-4 mr-2" />
@@ -108,20 +120,15 @@ export function WalletConnect() {
             )}
             {copied ? 'Copied!' : 'Copy Address'}
           </DropdownMenuItem>
-          
+
           <DropdownMenuSeparator />
-          
-          <DropdownMenuItem 
-            onClick={handleDisconnect} 
-            disabled={isDisconnecting}
+
+          <DropdownMenuItem
+            onClick={handleDisconnect}
             className="cursor-pointer text-destructive focus:text-destructive"
           >
-            {isDisconnecting ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <LogOut className="w-4 h-4 mr-2" />
-            )}
-            {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+            <LogOut className="w-4 h-4 mr-2" />
+            Disconnect
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -130,60 +137,12 @@ export function WalletConnect() {
 
   // Not Connected State - Clean connect button
   return (
-    <div className="flex items-center gap-2">
-      {availableWallets.length > 1 ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              disabled={isConnecting}
-              className="bg-primary hover:bg-primary/90"
-            >
-              {isConnecting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  <Wallet className="w-4 h-4 mr-2" />
-                  Connect Wallet
-                  <ChevronDown className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            {availableWallets.map((wallet) => (
-              <DropdownMenuItem 
-                key={wallet.name}
-                onClick={() => handleConnect(wallet.name)}
-                className="cursor-pointer"
-              >
-                <span className="mr-2">{wallet.icon}</span>
-                {wallet.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <Button 
-          onClick={() => handleConnect()}
-          disabled={isConnecting}
-          className="bg-primary hover:bg-primary/90"
-        >
-          {isConnecting ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Connecting...
-            </>
-          ) : (
-            <>
-              <Wallet className="w-4 h-4 mr-2" />
-              Connect Wallet
-            </>
-          )}
-        </Button>
-      )}
-    </div>
+    <Button
+      onClick={handleConnect}
+      className="bg-primary hover:bg-primary/90"
+    >
+      <Wallet className="w-4 h-4 mr-2" />
+      Connect Wallet
+    </Button>
   )
 }

@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { useWallet } from '@/contexts/WalletContext'
+import { useAccount } from 'wagmi'
 import { 
   ArrowRight, 
   Users, 
@@ -17,7 +17,7 @@ import {
 import Link from 'next/link'
 
 export function Hero() {
-  const { isConnected } = useWallet()
+  const { isConnected } = useAccount()
 
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden">

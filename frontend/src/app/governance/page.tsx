@@ -2,7 +2,7 @@
 
 import { VoterPanel } from "@/components/VoterPanel";
 import { ContractStatus } from "@/components/ContractStatus";
-import { useWallet } from "@/contexts/WalletContext";
+import { useAccount } from "wagmi";
 import {
   Card,
   CardContent,
@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Gavel, AlertCircle, CheckCircle2 } from "lucide-react";
 
 export default function GovernancePage() {
-  const { isConnected, account } = useWallet();
+  const { isConnected, address } = useAccount();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
@@ -56,11 +56,11 @@ export default function GovernancePage() {
                       {isConnected ? "Connected" : "Not Connected"}
                     </Badge>
                   </div>
-                  {isConnected && account && (
+                  {isConnected && address && (
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Address:</span>
                       <span className="text-sm font-mono text-muted-foreground">
-                        {account.slice(0, 6)}...{account.slice(-4)}
+                        {address.slice(0, 6)}...{address.slice(-4)}
                       </span>
                     </div>
                   )}

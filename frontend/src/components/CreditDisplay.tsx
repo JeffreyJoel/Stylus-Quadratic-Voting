@@ -2,8 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { useWallet } from '@/contexts/WalletContext'
-import { QuadraticVotingService } from '@/lib/contract'
+import { useAccount } from 'wagmi'
 import { Coins, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
@@ -19,29 +18,28 @@ interface CreditDisplayProps {
 }
 
 export function CreditDisplay({ onCreditsChange }: CreditDisplayProps) {
-  const { account, signer } = useWallet()
+  const { address } = useAccount()
   const [credits, setCredits] = useState<CreditInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchCredits = useCallback(async (showRefreshing = false) => {
-    if (!account || !signer) return
+    if (!address) return
 
     setLoading(!showRefreshing)
     if (showRefreshing) setRefreshing(true)
-    
+
     try {
-      const service = new QuadraticVotingService(signer)
-      const creditInfo = await service.getVoterCredits(account)
-      
-      const creditData = {
-        total: creditInfo.total,
-        spent: creditInfo.spent,
-        remaining: creditInfo.remaining
+      // TODO: Implement credit fetching with wagmi hooks
+      // For now, show default credits since contract doesn't have getVoterCredits function
+      const defaultCredits = {
+        total: BigInt(100),
+        spent: BigInt(0),
+        remaining: BigInt(100)
       }
-      
-      setCredits(creditData)
-      onCreditsChange?.(creditData)
+
+      setCredits(defaultCredits)
+      onCreditsChange?.(defaultCredits)
     } catch (error) {
       console.error('Failed to fetch credits:', error)
       // Silently handle contract errors for frontend demo
@@ -58,7 +56,7 @@ export function CreditDisplay({ onCreditsChange }: CreditDisplayProps) {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [account, signer, onCreditsChange])
+  }, [address, onCreditsChange])
 
   useEffect(() => {
     fetchCredits()
@@ -68,7 +66,7 @@ export function CreditDisplay({ onCreditsChange }: CreditDisplayProps) {
     fetchCredits(true)
   }
 
-  if (!account) {
+  if (!address) {
     return (
       <Card>
         <CardHeader>

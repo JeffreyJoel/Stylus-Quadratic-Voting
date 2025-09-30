@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { WalletConnect } from "@/components/WalletConnect";
-import { useWallet } from "@/contexts/WalletContext";
+import { useAccount } from "wagmi";
 import {
   Menu,
   X,
@@ -59,7 +59,7 @@ const navigationItems = [
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
-  const { isConnected } = useWallet();
+  const { isConnected } = useAccount();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);

@@ -11,23 +11,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useWallet } from "@/contexts/WalletContext";
-import { QuadraticVotingService } from "@/lib/contract";
-import { Plus, Loader2, AlertCircle } from "lucide-react";
+import { useAccount } from "wagmi";
+import { Plus, Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { WalletConnect } from "@/components/WalletConnect";
 import { ContractStatus } from "@/components/ContractStatus";
-import { CONTRACT_ADDRESS } from "@/lib/contract";
+import { CONTRACT_ADDRESS } from "@/lib/wagmi";
+import { CreateSessionDialog } from "@/components/CreateSessionDialog";
+
 
 export default function CreateProposalPage() {
-  const { account, signer } = useWallet();
+  const { address } = useAccount();
   const [proposalTitle, setProposalTitle] = useState("");
   const [proposalDescription, setProposalDescription] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [creating, setCreating] = useState(false);
 
   const handleCreateProposal = async () => {
-    if (!signer || !account) {
+    if (!address) {
       toast.error("Please connect your wallet");
       return;
     }
@@ -69,7 +70,7 @@ export default function CreateProposalPage() {
     }
   };
 
-  if (!account) {
+  if (!address) {
     return (
       <div className="container mx-auto px-4 py-8">
         <Card>
@@ -179,22 +180,7 @@ export default function CreateProposalPage() {
               </Button>
             </div>
 
-            {/* Info Note */}
-            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-blue-800 dark:text-blue-200">
-                    Feature Under Development
-                  </p>
-                  <p className="text-blue-700 dark:text-blue-300">
-                    The smart contract currently creates proposals during session creation.
-                    A separate &quot;add proposal to session&quot; function needs to be implemented
-                    for this feature to work.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <CreateSessionDialog/>
           </CardContent>
         </Card>
       </div>
