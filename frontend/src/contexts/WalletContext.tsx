@@ -536,7 +536,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
 
     // Subscribe to AppKit events
-    const unsubscribe = appKit.subscribeProvider(handleAppKitConnection);
+    const unsubscribe = appKit.subscribeProviders(handleAppKitConnection);
 
     return () => {
       if (unsubscribe) unsubscribe();
