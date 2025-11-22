@@ -9,6 +9,7 @@ import React, {
   useCallback,
 } from "react";
 import { ethers, TypedDataField } from "ethers";
+import { getAppKit } from "@/lib/walletConnectConfig";
 
 // Extend the existing Window.ethereum type with additional wallet properties
 interface ExtendedEthereum {
@@ -144,6 +145,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const [availableWallets] = useState<WalletInfo[]>(detectWallets());
 
+  // Handle WalletConnect connection via Reown AppKit
+  const handleWalletConnectConnection = useCallback(async () => {
+    try {
+      console.log("🔗 Initiating WalletConnect connection...");
+
+      const appKit = getAppKit();
+      if (!appKit) {
+        throw new Error("WalletConnect AppKit not initialized");
+      }
+
+      // Open the modal for wallet selection
+      await appKit.open();
+
+      // The modal will handle the connection
+      // We'll listen for the connection event in a separate useEffect
+      console.log("✅ WalletConnect modal opened");
+    } catch (error) {
+      console.error("WalletConnect connection failed:", error);
+      throw error;
+    }
+  }, []);
+
   // Professional wallet connection with multi-wallet support
   const connect = useCallback(
     async (requestedWalletName?: string) => {
@@ -165,9 +188,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             targetProvider = wallet.provider as ExtendedEthereum;
             selectedWalletName = wallet.name;
           } else if (requestedWalletName === "WalletConnect") {
-            throw new Error(
-              "WalletConnect not implemented yet - use browser extension wallets for now"
-            );
+            // Handle WalletConnect via Reown AppKit
+            await handleWalletConnectConnection();
+            return; // Exit early as WalletConnect is handled differently
           }
         } else {
           // Auto-detect best available wallet
@@ -274,6 +297,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(() => {
     console.log(`Disconnecting from ${walletName}...`); // DEBUG: will remove later
+
+    // Disconnect WalletConnect if active
+    if (walletName === "WalletConnect") {
+      const appKit = getAppKit();
+      if (appKit) {
+        appKit.disconnect();
+      }
+    }
 
     setAccount(null);
     setProvider(null);
@@ -470,6 +501,47 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem("walletConnected");
     }
   }, [isConnected]);
+
+  // Listen for Reown AppKit connection events
+  useEffect(() => {
+    const appKit = getAppKit();
+    if (!appKit) return;
+
+    const handleAppKitConnection = async () => {
+      try {
+        const walletProvider = appKit.getWalletProvider();
+        if (!walletProvider) return;
+
+        console.log("🔗 AppKit wallet connected, setting up provider...");
+
+        // Create ethers provider from WalletConnect provider
+        const browserProvider = new ethers.BrowserProvider(walletProvider as any);
+        const walletSigner = await browserProvider.getSigner();
+        const network = await browserProvider.getNetwork();
+        const address = await walletSigner.getAddress();
+
+        setAccount(address);
+        setProvider(browserProvider);
+        setSigner(walletSigner);
+        setChainId(Number(network.chainId));
+        setWalletName("WalletConnect");
+
+        localStorage.setItem("selectedWallet", "WalletConnect");
+        localStorage.setItem("walletConnected", "true");
+
+        console.log("✅ WalletConnect provider setup complete:", address);
+      } catch (error) {
+        console.error("Failed to setup WalletConnect provider:", error);
+      }
+    };
+
+    // Subscribe to AppKit events
+    const unsubscribe = appKit.subscribeProviders(handleAppKitConnection);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   return (
     <WalletContext.Provider
